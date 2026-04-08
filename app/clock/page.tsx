@@ -310,14 +310,14 @@ export default function ClockPage() {
       return;
     }
 
-    const allowed =
+    const allowed: readonly Exclude<EntryType, "IN">[] =
       status === "ON"
-        ? (["BREAK_START", "OUT"] as const)
+        ? ["BREAK_START", "OUT"]
         : status === "BREAK"
-          ? (["BREAK_END"] as const)
-          : ([] as const);
+          ? ["BREAK_END"]
+          : [];
 
-    if (!allowed.includes(type as any)) {
+    if (!allowed.includes(type)) {
       setLoading(false);
       alert("Acción no permitida según tu estado actual.");
       return;

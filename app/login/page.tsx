@@ -1,12 +1,12 @@
 "use client";
 export const dynamic = "force-dynamic";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { useSearchParams } from "next/navigation";
 import { getMyCompanyAccess } from "@/lib/companyAccess";
 
-export default function LoginPage() {
+function LoginContent() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -67,8 +67,7 @@ export default function LoginPage() {
               </h1>
 
               <p className="mt-5 max-w-md text-sm leading-6 text-white/60">
-                Control de jornada desde
-                una sola plataforma.
+                Control de jornada desde una sola plataforma.
               </p>
             </div>
 
@@ -141,5 +140,19 @@ export default function LoginPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#0B0F17] flex items-center justify-center text-white">
+          Cargando...
+        </div>
+      }
+    >
+      <LoginContent />
+    </Suspense>
   );
 }

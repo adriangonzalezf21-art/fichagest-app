@@ -1,11 +1,11 @@
 "use client";
 export const dynamic = "force-dynamic";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
 
-export default function JoinPage() {
+function JoinContent() {
   const router = useRouter();
   const sp = useSearchParams();
 
@@ -133,8 +133,9 @@ export default function JoinPage() {
       }
 
       router.push("/app");
-    } catch (e: any) {
-      setErrorMsg(e?.message ?? "Error inesperado.");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : "Error inesperado.";
+      setErrorMsg(message);
     } finally {
       setLoading(false);
     }
@@ -225,5 +226,13 @@ export default function JoinPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+export default function JoinPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-[#0B0F17] flex items-center justify-center text-white">Cargando...</div>}>
+      <JoinContent />
+    </Suspense>
   );
 }

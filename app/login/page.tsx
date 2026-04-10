@@ -130,6 +130,15 @@ function LoginContent() {
                 >
                   {loading ? "Accediendo..." : "Iniciar sesión"}
                 </button>
+
+                <div className="mt-4 text-center">
+                  <a
+                    href="/forgot-password"
+                    className="text-sm text-white/60 hover:text-white underline"
+                  >
+                    ¿Has olvidado tu contraseña?
+                  </a>
+                </div>
               </div>
 
               <div className="mt-6 text-center text-xs text-white/35">

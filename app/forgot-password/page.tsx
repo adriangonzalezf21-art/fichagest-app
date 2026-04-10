@@ -22,7 +22,7 @@ export default function ForgotPasswordPage() {
     if (error) {
       setError(error.message);
     } else {
-      setMsg("Revisa tu email para cambiar la contraseña.");
+      setMsg("Si el email existe, recibirás un enlace para restablecer tu contraseña.");
     }
 
     setLoading(false);

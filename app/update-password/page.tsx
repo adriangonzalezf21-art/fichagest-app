@@ -9,53 +9,123 @@ export default function UpdatePasswordPage() {
   const router = useRouter();
 
   const [password, setPassword] = useState("");
+  const [password2, setPassword2] = useState("");
   const [loading, setLoading] = useState(false);
+  const [checking, setChecking] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    const handleSession = async () => {
-      const hash = window.location.hash.replace("#", "");
-      const params = new URLSearchParams(hash);
+    const prepareRecoverySession = async () => {
+      setChecking(true);
+      setError(null);
 
-      const access_token = params.get("access_token");
-      const refresh_token = params.get("refresh_token");
+      try {
+        const url = new URL(window.location.href);
 
-      if (access_token && refresh_token) {
-        await supabase.auth.setSession({
-          access_token,
-          refresh_token,
-        });
+        // Caso 1: flujo con ?code=...
+        const code = url.searchParams.get("code");
+
+        if (code) {
+          const { error } = await supabase.auth.exchangeCodeForSession(code);
+          if (error) {
+            setError("El enlace de recuperación no es válido o ha expirado.");
+            setChecking(false);
+            return;
+          }
+
+          setChecking(false);
+          return;
+        }
+
+        // Caso 2: flujo con #access_token y #refresh_token
+        const hash = window.location.hash.startsWith("#")
+          ? window.location.hash.slice(1)
+          : "";
+
+        const params = new URLSearchParams(hash);
+        const access_token = params.get("access_token");
+        const refresh_token = params.get("refresh_token");
+        const type = params.get("type");
+
+        if (type === "recovery" && access_token && refresh_token) {
+          const { error } = await supabase.auth.setSession({
+            access_token,
+            refresh_token,
+          });
+
+          if (error) {
+            setError("El enlace de recuperación no es válido o ha expirado.");
+            setChecking(false);
+            return;
+          }
+
+          setChecking(false);
+          return;
+        }
+
+        // Caso 3: ya hay sesión válida
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (session) {
+          setChecking(false);
+          return;
+        }
+
+        setError("No se ha podido validar el enlace de recuperación.");
+        setChecking(false);
+      } catch (e: unknown) {
+        setError(e instanceof Error ? e.message : "Error inesperado.");
+        setChecking(false);
       }
     };
 
-    handleSession();
+    prepareRecoverySession();
   }, []);
 
   const handleUpdate = async () => {
     setLoading(true);
     setError(null);
+    setMsg(null);
 
-    if (password.length < 6) {
-      setError("Mínimo 6 caracteres");
-      setLoading(false);
-      return;
-    }
+    try {
+      if (!password || !password2) {
+        setError("Completa ambos campos.");
+        return;
+      }
 
-    const { error } = await supabase.auth.updateUser({
-      password,
-    });
+      if (password.length < 6) {
+        setError("La contraseña debe tener al menos 6 caracteres.");
+        return;
+      }
 
-    if (error) {
-      setError(error.message);
-    } else {
-      setMsg("Contraseña actualizada");
-      setTimeout(() => {
+      if (password !== password2) {
+        setError("Las contraseñas no coinciden.");
+        return;
+      }
+
+      const { error } = await supabase.auth.updateUser({
+        password,
+      });
+
+      if (error) {
+        setError(error.message);
+        return;
+      }
+
+      setMsg("Contraseña actualizada correctamente. Redirigiendo al login...");
+
+      setTimeout(async () => {
+        await supabase.auth.signOut();
         router.push("/login");
       }, 1500);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Error inesperado.");
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   return (
@@ -63,24 +133,42 @@ export default function UpdatePasswordPage() {
       <div className="w-full max-w-md rounded-2xl border border-white/10 bg-white/[0.05] p-8">
         <h1 className="text-2xl font-bold mb-6">Nueva contraseña</h1>
 
-        {msg && <div className="mb-4 text-green-400">{msg}</div>}
-        {error && <div className="mb-4 text-red-400">{error}</div>}
+        {checking ? (
+          <p className="text-white/70">Validando enlace...</p>
+        ) : (
+          <>
+            {msg && <div className="mb-4 text-green-400">{msg}</div>}
+            {error && <div className="mb-4 text-red-400">{error}</div>}
 
-        <input
-          type="password"
-          placeholder="Nueva contraseña"
-          className="w-full mb-4 px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
+            {!msg && (
+              <>
+                <input
+                  type="password"
+                  placeholder="Nueva contraseña"
+                  className="w-full mb-4 px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
 
-        <button
-          onClick={handleUpdate}
-          disabled={loading}
-          className="w-full bg-white text-black py-3 rounded-xl"
-        >
-          {loading ? "Guardando..." : "Actualizar contraseña"}
-        </button>
+                <input
+                  type="password"
+                  placeholder="Repite la contraseña"
+                  className="w-full mb-4 px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10"
+                  value={password2}
+                  onChange={(e) => setPassword2(e.target.value)}
+                />
+
+                <button
+                  onClick={handleUpdate}
+                  disabled={loading}
+                  className="w-full bg-white text-black py-3 rounded-xl"
+                >
+                  {loading ? "Guardando..." : "Actualizar contraseña"}
+                </button>
+              </>
+            )}
+          </>
+        )}
       </div>
     </main>
   );

@@ -498,7 +498,7 @@ export default function AdminShiftsPage() {
     <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.25)]">
       <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
         <div>
-          <h2 className="text-xl font-bold text-white">Turnos empresa</h2>
+          <h2 className="text-xl font-bold text-white">Fichajes empresa</h2>
           <p className="text-sm text-white/60">
             {company?.name ? (
               <>
@@ -536,7 +536,7 @@ export default function AdminShiftsPage() {
             disabled={loading || filteredClosed.length === 0}
             title={filteredClosed.length === 0 ? "No hay turnos cerrados para exportar" : ""}
           >
-            Export Excel
+            Exportar Excel
           </button>
 
           <button
@@ -545,7 +545,7 @@ export default function AdminShiftsPage() {
             disabled={loading || filteredClosed.length === 0}
             title={filteredClosed.length === 0 ? "No hay turnos cerrados para exportar" : ""}
           >
-            Export PDF (inspección)
+            Exportar PDF (inspección)
           </button>
 
           <button

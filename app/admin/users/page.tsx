@@ -347,7 +347,7 @@ export default function AdminUsersPage() {
                 className="rounded-xl border border-white/10 bg-white/[0.06] px-4 py-2 text-sm text-white hover:bg-white/[0.10] transition"
                 href="/admin/shifts"
               >
-                Turnos
+                Fichajes
               </a>
 
               <a

@@ -91,7 +91,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                 isActive("/admin/shifts") ? "bg-white/10" : "bg-white/5"
               }`}
             >
-              Turnos
+              Fichajes
             </Link>
 
             <Link

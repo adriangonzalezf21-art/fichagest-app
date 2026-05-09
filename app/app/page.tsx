@@ -35,6 +35,8 @@ type CalendarDayRow = {
   shifts_total: number;
   vacations_total: number;
   vacations_pending: number;
+  shift_names?: string[];
+  vacation_names?: string[];
 };
 
 function ymd(d: Date) {
@@ -190,13 +192,30 @@ function MiniCalendar({
                 isToday ? "ring-1 ring-[#7AA2FF]/60" : "",
               ].join(" ")}
               title={[
-                `${key}`,
-                shifts ? `Turnos: ${shifts}` : "",
-                vacs ? `Vacaciones: ${vacs}` : "",
-                vacPend ? `Pendientes: ${vacPend}` : "",
-              ]
-                .filter(Boolean)
-                .join(" · ")}
+  `${key}`,
+
+  shifts
+    ? `Turnos (${shifts}):\n${
+        (r?.shift_names || []).length > 0
+          ? (r?.shift_names || []).join("\n")
+          : "Sin nombres disponibles"
+      }`
+    : "",
+
+  vacs
+    ? `Vacaciones (${vacs}):\n${
+        (r?.vacation_names || []).length > 0
+          ? (r?.vacation_names || []).join("\n")
+          : "Sin nombres disponibles"
+      }`
+    : "",
+
+  vacPend
+    ? `Vacaciones pendientes: ${vacPend}`
+    : "",
+]
+  .filter(Boolean)
+  .join("\n\n")}
             >
               <div className="flex items-center justify-between">
                 <div className="text-white/80 text-xs font-medium">{c.date.getDate()}</div>

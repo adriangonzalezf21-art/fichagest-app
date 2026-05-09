@@ -8,6 +8,7 @@ type ProfileLite = {
   user_id: string;
   full_name: string | null;
   dni: string | null;
+  vacation_days_per_year: number | null;
 };
 
 type VacationReq = {
@@ -80,28 +81,44 @@ export default function AdminVacationsPage() {
         throw new Error("No tienes permisos de admin para ver esta página.");
       }
 
+      if (!me?.company_id) {
+        throw new Error("Tu usuario no está asociado a una empresa.");
+      }
+
       const { data: wRows, error: wErr } = await supabase
         .from("profiles")
-        .select("user_id, full_name, dni")
+        .select("user_id, full_name, dni, vacation_days_per_year")
+        .eq("company_id", me.company_id)
         .order("full_name", { ascending: true });
 
       if (wErr) throw new Error(wErr.message);
 
-      const w = ((wRows ?? []) as ProfileLite[]);
+      const w = (wRows ?? []) as ProfileLite[];
       setWorkers(w);
 
       const nMap: Record<string, string> = {};
       const dMap: Record<string, string> = {};
+
       w.forEach((p) => {
         nMap[p.user_id] = p.full_name?.trim() || p.user_id.slice(0, 8);
         dMap[p.user_id] = (p.dni || "").trim();
       });
+
       setNameByUser(nMap);
       setDniByUser(dMap);
+
+      const workerIds = w.map((x) => x.user_id);
+
+      if (workerIds.length === 0) {
+        setRequests([]);
+        setBalances([]);
+        return;
+      }
 
       const { data: reqRows, error: rErr } = await supabase
         .from("vacation_requests")
         .select("id,user_id,start_date,end_date,days,status,note,admin_note,created_at")
+        .in("user_id", workerIds)
         .order("start_date", { ascending: true });
 
       if (rErr) throw new Error(rErr.message);
@@ -111,6 +128,7 @@ export default function AdminVacationsPage() {
         .from("vacation_balances")
         .select("user_id, year, entitled_days, carried_over_days")
         .eq("year", currentYear)
+        .in("user_id", workerIds)
         .order("user_id", { ascending: true });
 
       if (bErr) throw new Error(bErr.message);
@@ -306,7 +324,11 @@ export default function AdminVacationsPage() {
           <div className="space-y-3">
             {workers.map((w) => {
               const b = balanceByUser[w.user_id];
-              const entitled = Number((b?.entitled_days ?? 30) + (b?.carried_over_days ?? 0));
+
+              const annualDays = Number(w.vacation_days_per_year ?? 30);
+              const carriedOver = Number(b?.carried_over_days ?? 0);
+              const entitled = annualDays + carriedOver;
+
               const taken = Number(approvedTakenByUserThisYear[w.user_id] ?? 0);
               const remaining = entitled - taken;
 
@@ -321,14 +343,16 @@ export default function AdminVacationsPage() {
                       <span className="text-xs text-white/50">{w.dni ? `(${w.dni})` : ""}</span>
                     </div>
                     <div className="text-sm text-white/60 mt-1">
-                      Asignados: <b className="text-white">{entitled.toFixed(2)}</b> · Consumidos:{" "}
+                      Anuales: <b className="text-white">{annualDays.toFixed(2)}</b> · Arrastre:{" "}
+                      <b className="text-white">{carriedOver.toFixed(2)}</b> · Asignados:{" "}
+                      <b className="text-white">{entitled.toFixed(2)}</b> · Consumidos:{" "}
                       <b className="text-white">{taken.toFixed(2)}</b> · Restantes:{" "}
                       <b className="text-white">{remaining.toFixed(2)}</b>
                     </div>
                   </div>
 
                   <div className="text-xs text-white/40">
-                    * El balance se crea automáticamente al aprobar la primera solicitud.
+                    * Los días anuales se editan desde Usuarios.
                   </div>
                 </div>
               );

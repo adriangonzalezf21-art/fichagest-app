@@ -10,6 +10,7 @@ type ProfileRow = {
   active: boolean | null;
   is_owner: boolean | null;
   company_id: string | null;
+  vacation_days_per_year: number | null;
 };
 
 type CompanyRow = {
@@ -85,7 +86,7 @@ export default function AdminUsersPage() {
 
       const { data, error } = await supabase
         .from("profiles")
-        .select("user_id, full_name, role, active, is_owner, company_id")
+        .select("user_id, full_name, role, active, is_owner, company_id, vacation_days_per_year")
         .eq("company_id", me.company_id)
         .order("is_owner", { ascending: false })
         .order("role", { ascending: true })
@@ -200,6 +201,40 @@ export default function AdminUsersPage() {
 
     await load();
   };
+
+  const updateVacationDays = async (u: ProfileRow, value: string) => {
+  if (!myCompanyId) {
+    alert("No se pudo determinar tu empresa.");
+    return;
+  }
+
+  const days = Number(value);
+
+  if (!Number.isInteger(days) || days < 0 || days > 60) {
+    alert("Introduce un número válido entre 0 y 60.");
+    await load();
+    return;
+  }
+
+  setBusy(u.user_id, true);
+
+  const { error } = await supabase
+    .from("profiles")
+    .update({ vacation_days_per_year: days })
+    .eq("user_id", u.user_id)
+    .eq("company_id", myCompanyId);
+
+  setBusy(u.user_id, false);
+
+  if (error) {
+    alert("Error al guardar días de vacaciones: " + error.message);
+    await load();
+    return;
+  }
+
+  alert("Días de vacaciones actualizados ✅");
+  await load();
+};
 
   const deleteUserProfile = async (u: ProfileRow) => {
     const isOwnerTarget = u.is_owner === true;
@@ -431,6 +466,42 @@ export default function AdminUsersPage() {
 
                       <div className="text-sm text-white/60 mt-1">
                         Estado: <b className="text-white">{active ? "Activo" : "Desactivado"}</b>
+                      </div>
+
+                      <div className="text-sm text-white/60 mt-3">
+                        Días vacaciones/año
+                      </div>
+
+                      <div className="flex items-center gap-2 mt-1">
+                        <input
+  type="number"
+  min={0}
+  max={60}
+  className="w-24 rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 text-sm text-white"
+  value={u.vacation_days_per_year ?? 30}
+  disabled={busy}
+  onChange={(e) => {
+    const value = Number(e.target.value);
+
+    setRows((prev) =>
+      prev.map((row) =>
+        row.user_id === u.user_id
+          ? { ...row, vacation_days_per_year: value }
+          : row
+      )
+    );
+  }}
+  onBlur={(e) => updateVacationDays(u, e.target.value)}
+  onKeyDown={(e) => {
+    if (e.key === "Enter") {
+      e.currentTarget.blur();
+    }
+  }}
+/>
+
+                        <span className="text-xs text-white/40">
+                          Pulsa Enter o sal del campo para guardar
+                        </span>
                       </div>
                     </div>
 

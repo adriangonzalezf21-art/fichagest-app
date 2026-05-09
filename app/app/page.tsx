@@ -476,7 +476,7 @@ export default function AppHome() {
                 href="/history"
                 className="block rounded-xl px-4 py-3 text-sm text-white/80 hover:text-white border border-white/10 bg-white/[0.03] hover:bg-white/[0.08] transition"
               >
-                Mi historial
+                Mis fichajes
               </a>
               <a
                 href="/vacations"

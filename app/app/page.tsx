@@ -61,9 +61,9 @@ function LogoTimecore({ compact = false }: { compact?: boolean }) {
         <div className="leading-none">
           <div className="text-white text-[15px] tracking-wide">
             <span className="font-medium"></span>
-            <span className="font-extrabold">gest</span>
+            <span className="font-extrabold"></span>
           </div>
-          <div className="text-white/60 text-[11px] mt-1">Control horario &amp; gestión</div>
+          <div className="text-white/60 text-[11px] mt-1"></div>
         </div>
       )}
     </div>

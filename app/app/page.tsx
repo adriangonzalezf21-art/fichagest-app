@@ -18,6 +18,7 @@ type Company = {
   name: string | null;
   join_code: string | null;
   cif: string | null;
+  enable_shift_planning?: boolean | null;
 };
 
 type DashboardMetrics = {
@@ -321,7 +322,7 @@ export default function AppHome() {
       if (prof.company_id) {
         const { data: comp, error: compErr } = await supabase
           .from("companies")
-          .select("id, name, join_code, cif")
+          .select("id, name, join_code, cif, enable_shift_planning")
           .eq("id", prof.company_id)
           .maybeSingle<Company>();
 
@@ -478,13 +479,20 @@ export default function AppHome() {
               >
                 Mis fichajes
               </a>
+              {company?.enable_shift_planning && (
+              <a
+                href="/my-schedule"
+                className="block rounded-xl px-4 py-3 text-sm text-white/80 hover:text-white border border-white/10 bg-white/[0.03] hover:bg-white/[0.08] transition"
+              >
+                Mis turnos
+              </a>
+            )}
               <a
                 href="/vacations"
                 className="block rounded-xl px-4 py-3 text-sm text-white/80 hover:text-white border border-white/10 bg-white/[0.03] hover:bg-white/[0.08] transition"
               >
                 Vacaciones
               </a>
-
               {isAdmin && (
                 <>
                   <div className="pt-3 pb-1 text-white/60 text-xs px-1">Zona Admin</div>
@@ -494,6 +502,22 @@ export default function AppHome() {
                   >
                     Fichajes empresa
                   </a>
+                  {company?.enable_shift_planning && (
+                  <a
+                    href="/admin/planned-shifts"
+                    className="block rounded-xl px-4 py-3 text-sm text-white/80 hover:text-white border border-white/10 bg-white/[0.03] hover:bg-white/[0.08] transition"
+                  >
+                    Planificación de turnos
+                  </a>
+                )}
+                {company?.enable_shift_planning && (
+                  <a
+                    href="/admin/planned-vs-real"
+                    className="block rounded-xl px-4 py-3 text-sm text-white/80 hover:text-white border border-white/10 bg-white/[0.03] hover:bg-white/[0.08] transition"
+                  >
+                    Comparador de turnos
+                  </a>
+                )}
                   <a
                     href="/admin/users"
                     className="block rounded-xl px-4 py-3 text-sm text-white/80 hover:text-white border border-white/10 bg-white/[0.03] hover:bg-white/[0.08] transition"

@@ -19,8 +19,29 @@ export const metadata: Metadata = {
   manifest: "/manifest.json",
 
   icons: {
-    icon: "/favicon.ico",
-    apple: "/apple-touch-icon.png",
+    icon: [
+      {
+        url: "/favicon.ico",
+      },
+      {
+        url: "/favicon-32.png",
+        sizes: "32x32",
+        type: "image/png",
+      },
+      {
+        url: "/favicon-16.png",
+        sizes: "16x16",
+        type: "image/png",
+      },
+    ],
+
+    apple: [
+      {
+        url: "/apple-touch-icon.png",
+      },
+    ],
+
+    shortcut: ["/favicon.ico"],
   },
 
   appleWebApp: {
@@ -43,7 +64,7 @@ export default function RootLayout({
         {/* TOPBAR GLOBAL */}
         <header className="border-b border-white/10 bg-black/20 backdrop-blur-xl">
           <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-            
+
             {/* LOGO */}
             <div className="flex items-center gap-3">
               <img

@@ -16,11 +16,13 @@ function msToHHMM(ms: number) {
   const totalMin = Math.max(0, Math.floor(ms / 60000));
   const h = Math.floor(totalMin / 60);
   const m = totalMin % 60;
+
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
 export default function HistoryPage() {
   const router = useRouter();
+
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [loading, setLoading] = useState(true);
   const [blocked, setBlocked] = useState(false);
@@ -47,6 +49,7 @@ export default function HistoryPage() {
       const { data, error } = await supabase
         .from("shifts")
         .select("id, started_at, ended_at")
+        .eq("user_id", access.session.user.id)
         .order("started_at", { ascending: false })
         .limit(50);
 
@@ -80,6 +83,7 @@ export default function HistoryPage() {
     };
 
     init();
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
 
@@ -91,11 +95,20 @@ export default function HistoryPage() {
     <main className="min-h-screen bg-[#111827] p-6">
       <div className="max-w-6xl mx-auto space-y-6">
         <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-8 shadow-[0_20px_60px_rgba(0,0,0,0.25)]">
+          
           <div className="flex justify-between items-start gap-4 flex-wrap mb-6">
             <div>
-              <div className="text-white/60 text-xs">Fichagest · by Iberogest</div>
-              <h1 className="text-3xl font-bold text-white mt-1">Mi historial</h1>
-              <p className="text-white/60 mt-1">Historial de turnos (últimos 50)</p>
+              <div className="text-white/60 text-xs">
+                Fichagest · by Iberogest
+              </div>
+
+              <h1 className="text-3xl font-bold text-white mt-1">
+                Mi historial
+              </h1>
+
+              <p className="text-white/60 mt-1">
+                Historial de turnos (últimos 50)
+              </p>
             </div>
 
             <div className="flex gap-3 flex-wrap">
@@ -125,29 +138,35 @@ export default function HistoryPage() {
           {loading ? (
             <p className="text-white/70">Cargando...</p>
           ) : shifts.length === 0 ? (
-            <p className="text-white/50">Aún no hay turnos.</p>
+            <p className="text-white/50">
+              Aún no hay turnos registrados.
+            </p>
           ) : (
             <div className="space-y-3">
               {shifts.map((s) => {
                 const start = new Date(s.started_at);
                 const end = s.ended_at ? new Date(s.ended_at) : null;
-                const dur = end ? msToHHMM(end.getTime() - start.getTime()) : "—";
+
+                const dur = end
+                  ? msToHHMM(end.getTime() - start.getTime())
+                  : "EN CURSO";
 
                 return (
                   <div
                     key={s.id}
-                    className="border border-white/10 rounded-2xl p-4 bg-black/20 flex justify-between items-center gap-4"
+                    className="border border-white/10 rounded-2xl p-4 bg-black/20"
                   >
-                    <div>
-                      <div className="font-semibold text-white">
-                        {start.toLocaleString()} → {end ? end.toLocaleString() : "EN CURSO"}
-                      </div>
-                      <div className="text-sm text-white/60 mt-1">
-                        Duración: <span className="text-white">{dur}</span>
-                      </div>
+                    <div className="font-semibold text-white">
+                      {start.toLocaleString()} →{" "}
+                      {end ? end.toLocaleString() : "EN CURSO"}
                     </div>
 
-                  
+                    <div className="text-sm text-white/60 mt-2">
+                      Duración:{" "}
+                      <span className="text-white">
+                        {dur}
+                      </span>
+                    </div>
                   </div>
                 );
               })}

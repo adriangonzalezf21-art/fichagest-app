@@ -20,6 +20,7 @@ type CompanyRow = {
   plan?: string | null;
   plan_status?: string | null;
   blocked?: boolean | null;
+  enable_shift_planning?: boolean | null;
 };
 
 type CompanyUserRow = {
@@ -84,7 +85,9 @@ export default function OwnerCompaniesPage() {
 
       const { data: compRows, error: compErr } = await supabase
         .from("companies")
-        .select("id, name, cif, join_code, created_at, primary_admin_user_id, plan, plan_status, blocked")
+        .select(
+          "id, name, cif, join_code, created_at, primary_admin_user_id, plan, plan_status, blocked, enable_shift_planning"
+        )
         .order("created_at", { ascending: false });
 
       if (compErr) throw new Error(compErr.message);
@@ -124,11 +127,7 @@ export default function OwnerCompaniesPage() {
         });
 
         companyList.forEach((company) => {
-          if (company.primary_admin_user_id) {
-            selectedMap[company.id] = company.primary_admin_user_id;
-          } else {
-            selectedMap[company.id] = "";
-          }
+          selectedMap[company.id] = company.primary_admin_user_id || "";
         });
 
         setWorkerCounts(counts);
@@ -183,6 +182,7 @@ export default function OwnerCompaniesPage() {
           is_active: true,
           plan: "free",
           plan_status: "active",
+          enable_shift_planning: false,
         })
         .select("id, name, join_code")
         .single();
@@ -266,6 +266,34 @@ Después, cuando el usuario se registre, lo asignas como admin desde este panel.
       alert(nextBlocked ? "Empresa bloqueada ✅" : "Empresa desbloqueada ✅");
     } catch (e: any) {
       alert(e?.message ?? "Error actualizando bloqueo");
+    } finally {
+      setBusyCompanyId(null);
+    }
+  };
+
+  const toggleShiftPlanning = async (companyId: string, nextEnabled: boolean) => {
+    const ok = confirm(
+      nextEnabled
+        ? "¿Activar el planificador de turnos para esta empresa?"
+        : "¿Desactivar el planificador de turnos para esta empresa?"
+    );
+
+    if (!ok) return;
+
+    setBusyCompanyId(companyId);
+
+    try {
+      const { error } = await supabase
+        .from("companies")
+        .update({ enable_shift_planning: nextEnabled })
+        .eq("id", companyId);
+
+      if (error) throw error;
+
+      await load();
+      alert(nextEnabled ? "Planificador activado ✅" : "Planificador desactivado ✅");
+    } catch (e: any) {
+      alert(e?.message ?? "Error actualizando planificador");
     } finally {
       setBusyCompanyId(null);
     }
@@ -363,6 +391,7 @@ Después, cuando el usuario se registre, lo asignas como admin desde este panel.
         companies.map((c) => {
           const busy = busyCompanyId === c.id;
           const isBlocked = c.blocked === true;
+          const plannerEnabled = c.enable_shift_planning === true;
           const companyUsers = usersByCompany[c.id] || [];
 
           return (
@@ -371,6 +400,7 @@ Después, cuando el usuario se registre, lo asignas como admin desde este panel.
                 <div>
                   <div className="font-bold flex items-center gap-2 flex-wrap">
                     {c.name}
+
                     {isBlocked ? (
                       <span className="text-xs px-2 py-1 rounded border border-red-400/30 text-red-200 bg-red-500/10">
                         Bloqueada
@@ -380,6 +410,17 @@ Después, cuando el usuario se registre, lo asignas como admin desde este panel.
                         Activa
                       </span>
                     )}
+
+                    {plannerEnabled ? (
+                      <span className="text-xs px-2 py-1 rounded border border-blue-400/30 text-blue-200 bg-blue-500/10">
+                        Planificador ON
+                      </span>
+                    ) : (
+                      <span className="text-xs px-2 py-1 rounded border border-white/10 text-white/50 bg-white/5">
+                        Planificador OFF
+                      </span>
+                    )}
+
                     {c.primary_admin_user_id ? (
                       <span className="text-xs px-2 py-1 rounded border border-white/10 text-white/80">
                         Admin asignado
@@ -391,7 +432,7 @@ Después, cuando el usuario se registre, lo asignas como admin desde este panel.
                     )}
                   </div>
 
-                  <div className="text-sm text-white/60">CIF: {c.cif || "—"}</div>
+                  <div className="text-sm text-white/60 mt-1">CIF: {c.cif || "—"}</div>
 
                   <div className="text-sm text-white/60">Código: {c.join_code}</div>
 
@@ -401,6 +442,13 @@ Después, cuando el usuario se registre, lo asignas como admin desde este panel.
 
                   <div className="text-sm text-white/60">
                     Plan: {c.plan || "free"} · Estado: {c.plan_status || "active"}
+                  </div>
+
+                  <div className="text-sm text-white/60">
+                    Planificador:{" "}
+                    <span className={plannerEnabled ? "text-blue-200" : "text-white/50"}>
+                      {plannerEnabled ? "Activado" : "Desactivado"}
+                    </span>
                   </div>
                 </div>
 
@@ -433,6 +481,24 @@ Después, cuando el usuario se registre, lo asignas como admin desde este panel.
                   >
                     Nuevo código
                   </button>
+
+                  {plannerEnabled ? (
+                    <button
+                      onClick={() => toggleShiftPlanning(c.id, false)}
+                      className="border border-blue-400/30 text-blue-100 px-2 py-1 rounded"
+                      disabled={busy}
+                    >
+                      Desactivar planificador
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => toggleShiftPlanning(c.id, true)}
+                      className="border border-blue-400/30 text-blue-100 px-2 py-1 rounded"
+                      disabled={busy}
+                    >
+                      Activar planificador
+                    </button>
+                  )}
 
                   {isBlocked ? (
                     <button

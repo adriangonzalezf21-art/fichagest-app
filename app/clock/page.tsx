@@ -78,6 +78,36 @@ function statusFromLast(lastType?: EntryType): Status {
   return "ON";
 }
 
+function entryTypeLabel(type: EntryType) {
+  switch (type) {
+    case "IN":
+      return "Entrada";
+    case "BREAK_START":
+      return "Inicio descanso";
+    case "BREAK_END":
+      return "Fin descanso";
+    case "OUT":
+      return "Salida";
+    default:
+      return type;
+  }
+}
+
+function entryTypeSubLabel(type: EntryType) {
+  switch (type) {
+    case "IN":
+      return "Inicio de jornada";
+    case "BREAK_START":
+      return "Descanso iniciado";
+    case "BREAK_END":
+      return "Descanso finalizado";
+    case "OUT":
+      return "Jornada finalizada";
+    default:
+      return "Movimiento registrado";
+  }
+}
+
 export default function ClockPage() {
   const router = useRouter();
 
@@ -104,9 +134,9 @@ export default function ClockPage() {
   const statusLabel = useMemo(() => {
     if (!activeChecked) return "Cargando...";
     if (!userActive) return "Cuenta desactivada";
-    if (status === "OFF") return "Fuera (puedes iniciar turno)";
-    if (status === "ON") return "Dentro (turno en curso)";
-    return "En pausa";
+    if (status === "OFF") return "Fuera de turno";
+    if (status === "ON") return "Turno en curso";
+    return "En descanso";
   }, [status, userActive, activeChecked]);
 
   const totals = useMemo(() => {
@@ -390,7 +420,7 @@ export default function ClockPage() {
           </div>
 
           <div className="border border-white/10 rounded-xl p-4 bg-black/20">
-            <div className="text-sm text-white/60">Tiempo en pausa</div>
+            <div className="text-sm text-white/60">Tiempo en descanso</div>
             <div className="text-2xl font-bold text-white">{formatHHMMSS(totals.breakSeconds)}</div>
           </div>
 
@@ -414,7 +444,7 @@ export default function ClockPage() {
             disabled={actionsDisabled || status !== "ON"}
             className="rounded-xl border border-white/10 py-3 px-4 text-white disabled:opacity-40"
           >
-            Pausa
+            Iniciar descanso
           </button>
 
           <button
@@ -422,7 +452,7 @@ export default function ClockPage() {
             disabled={actionsDisabled || status !== "BREAK"}
             className="rounded-xl border border-white/10 py-3 px-4 text-white disabled:opacity-40"
           >
-            Fin pausa
+            Finalizar descanso
           </button>
 
           <button
@@ -435,21 +465,41 @@ export default function ClockPage() {
         </div>
 
         <h2 className="text-xl font-bold mb-3 text-white">
-          {activeShiftId ? "Fichajes del turno actual" : "Fichajes"}
+          {activeShiftId ? "Movimientos del turno actual" : "Movimientos"}
         </h2>
 
         <div className="space-y-2">
           {entries.map((e) => (
             <div
               key={e.id}
-              className="flex justify-between border border-white/10 rounded-xl p-3 bg-black/20 text-white"
+              className="flex justify-between items-center gap-4 border border-white/10 rounded-xl p-4 bg-black/20 text-white"
             >
-              <b>{e.entry_type}</b>
-              <span>{new Date(e.ts).toLocaleString()}</span>
+              <div>
+                <div className="font-semibold text-white">{entryTypeLabel(e.entry_type)}</div>
+                <div className="text-xs text-white/50 mt-1">
+                  {entryTypeSubLabel(e.entry_type)}
+                </div>
+              </div>
+
+              <div className="text-right">
+                <div className="text-sm text-white">
+                  {new Date(e.ts).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })}
+                </div>
+
+                <div className="text-xs text-white/50 mt-1">
+                  {new Date(e.ts).toLocaleDateString()}
+                </div>
+              </div>
             </div>
           ))}
+
           {entries.length === 0 && (
-            <p className="text-white/50">{activeShiftId ? "No hay registros." : "No hay turno activo."}</p>
+            <p className="text-white/50">
+              {activeShiftId ? "Todavía no hay movimientos en este turno." : "No hay turno activo."}
+            </p>
           )}
         </div>
       </div>

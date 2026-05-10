@@ -694,7 +694,7 @@ export default function AdminShiftsPage() {
 
                 <div className="flex gap-3 items-center">
                   <a className="text-sm text-[#7AA2FF] hover:underline" href={`/shift/${s.id}`}>
-                    Ver detalle →
+                    
                   </a>
                 </div>
               </div>

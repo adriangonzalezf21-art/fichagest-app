@@ -147,12 +147,7 @@ export default function HistoryPage() {
                       </div>
                     </div>
 
-                    <a
-                      className="text-sm text-[#7AA2FF] hover:underline whitespace-nowrap"
-                      href={`/shift/${s.id}`}
-                    >
-                      Ver detalle →
-                    </a>
+                  
                   </div>
                 );
               })}

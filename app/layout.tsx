@@ -13,8 +13,21 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Fichagest · Iberogest",
-  description: "Control horario y gestión laboral para clientes de Iberogest",
+  title: "Fichagest",
+  description: "Control horario y gestión de turnos",
+
+  manifest: "/manifest.json",
+
+  icons: {
+    icon: "/favicon.ico",
+    apple: "/apple-touch-icon.png",
+  },
+
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
+    title: "Fichagest",
+  },
 };
 
 export default function RootLayout({
@@ -33,20 +46,26 @@ export default function RootLayout({
             
             {/* LOGO */}
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-[#134396]" />
+              <img
+                src="/icon-192.png"
+                alt="Fichagest"
+                className="w-10 h-10 rounded-2xl"
+              />
+
               <div className="leading-none">
                 <div className="font-semibold text-lg">
                   Ficha<span className="font-extrabold">gest</span>
                 </div>
+
                 <div className="text-xs text-white/60">
                   Plataforma de control horario
                 </div>
               </div>
             </div>
 
-            {/* MARCA IBEROGEST */}
+            {/* MARCA */}
             <div className="text-sm text-white/60">
-              by <span className="font-semibold text-white">Iberogest</span>
+              SaaS laboral
             </div>
 
           </div>
@@ -59,7 +78,7 @@ export default function RootLayout({
 
         {/* FOOTER */}
         <footer className="max-w-7xl mx-auto px-6 pb-8 text-xs text-white/40">
-          Fichagest · Sistema de registro horario · Iberogest
+          Fichagest · Sistema profesional de control horario
         </footer>
       </body>
     </html>

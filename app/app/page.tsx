@@ -57,18 +57,13 @@ function endOfMonthExclusive(d = new Date()) {
 function LogoTimecore({ compact = false }: { compact?: boolean }) {
   return (
     <div className="flex items-center gap-3 select-none">
-      <svg width={compact ? 30 : 34} height={compact ? 30 : 34} viewBox="0 0 120 120" fill="none">
-        <circle cx="60" cy="60" r="42" fill="#134396" />
-        <circle cx="60" cy="60" r="26" fill="#1E2A38" />
-      </svg>
-
       {!compact && (
         <div className="leading-none">
           <div className="text-white text-[15px] tracking-wide">
-            <span className="font-medium">Ficha</span>
-            <span className="font-extrabold">gest</span>
+            <span className="font-medium"></span>
+            <span className="font-extrabold"></span>
           </div>
-          <div className="text-white/60 text-[11px] mt-1">Control horario &amp; gestión</div>
+          <div className="text-white/60 text-[11px] mt-1"> </div>
         </div>
       )}
     </div>

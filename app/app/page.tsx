@@ -61,9 +61,9 @@ function LogoTimecore({ compact = false }: { compact?: boolean }) {
         <div className="leading-none">
           <div className="text-white text-[15px] tracking-wide">
             <span className="font-medium"></span>
-            <span className="font-extrabold"></span>
+            <span className="font-extrabold">gest</span>
           </div>
-          <div className="text-white/60 text-[11px] mt-1"> </div>
+          <div className="text-white/60 text-[11px] mt-1">Control horario &amp; gestión</div>
         </div>
       )}
     </div>
@@ -612,23 +612,7 @@ export default function AppHome() {
             onNextMonth={() => setCalMonth((d) => new Date(d.getFullYear(), d.getMonth() + 1, 1))}
           />
 
-          <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-            <div className="xl:col-span-7 space-y-4">
-              <div className="text-white/80 text-sm font-semibold">Acciones rápidas</div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <ActionTile title="Fichar ahora" desc="Inicia o finaliza tu jornada en segundos." href="/clock" />
-                <ActionTile title="Ver historial" desc="Consulta tus turnos y exporta cuando lo necesites." href="/history" />
-                <ActionTile title="Solicitar vacaciones" desc="Envía una solicitud y revisa su estado." href="/vacations" />
-
-                {isAdmin ? (
-                  <ActionTile title="Vacaciones del equipo" desc="Aprueba o rechaza solicitudes." href="/admin/vacations" />
-                ) : (
-                  <ActionTile title="Mi resumen" desc="Revisa tu progreso del mes." href="/history" />
-                )}
-              </div>
-            </div>
-
-            <div className="xl:col-span-5">
+            <div>
               <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-5 shadow-[0_20px_60px_rgba(0,0,0,0.22)]">
                 <div className="flex items-center justify-between">
                   <div>
@@ -694,7 +678,6 @@ export default function AppHome() {
                 </div>
               </div>
             </div>
-          </div>
 
           <div className="text-white/40 text-xs">Fichagest · Panel corporativo · Diseño premium</div>
         </main>

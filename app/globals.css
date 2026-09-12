@@ -1,48 +1,90 @@
 @import "tailwindcss";
 
 :root {
-  --background: #111827;
-  --foreground: #ffffff;
+  /* Surfaces */
+  --bg: #0b1220;
+  --bg-elevated: #111827;
+  --surface: #151c2c;
+  --surface-hover: #1a2336;
+  --surface-muted: rgba(255, 255, 255, 0.04);
 
-  --fg-muted: rgba(255, 255, 255, 0.7);
-  --fg-soft: rgba(255, 255, 255, 0.55);
-  --border-soft: rgba(255, 255, 255, 0.1);
+  /* Borders & text */
+  --border: rgba(148, 163, 184, 0.14);
+  --border-strong: rgba(148, 163, 184, 0.28);
+  --text: #f8fafc;
+  --text-secondary: rgba(226, 232, 240, 0.72);
+  --text-muted: rgba(148, 163, 184, 0.78);
 
-  --brand-primary: #134396;
-  --brand-dark: #1e2a38;
-  --brand-accent: #7aa2ff;
+  /* Accent & status */
+  --accent: #6366f1;
+  --accent-soft: rgba(99, 102, 241, 0.16);
+  --accent-hover: #818cf8;
+  --success: #34d399;
+  --success-soft: rgba(52, 211, 153, 0.14);
+  --warning: #fbbf24;
+  --warning-soft: rgba(251, 191, 36, 0.14);
+  --danger: #f87171;
+  --danger-soft: rgba(248, 113, 113, 0.14);
+  --info: #60a5fa;
+  --info-soft: rgba(96, 165, 250, 0.14);
 
-  --panel-bg: rgba(255, 255, 255, 0.06);
-  --panel-bg-strong: rgba(255, 255, 255, 0.08);
-  --panel-dark: rgba(0, 0, 0, 0.2);
+  /* Shape */
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-xl: 1.25rem;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.28);
+  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.35);
+
+  --sidebar-width: 16.5rem;
+  --topbar-height: 3.75rem;
+
+  /* Compat aliases (legacy class helpers) */
+  --background: var(--bg);
+  --foreground: var(--text);
+  --fg-muted: var(--text-secondary);
+  --fg-soft: var(--text-muted);
+  --border-soft: var(--border);
+  --brand-primary: var(--accent);
+  --brand-dark: var(--bg-elevated);
+  --brand-accent: var(--accent-hover);
+  --panel-bg: var(--surface);
+  --panel-bg-strong: var(--surface-hover);
+  --panel-dark: var(--surface-muted);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-
+  --color-background: var(--bg);
+  --color-foreground: var(--text);
+  --color-surface: var(--surface);
+  --color-accent: var(--accent);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
 html {
-  background: var(--background);
+  background: var(--bg);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
   min-height: 100vh;
 }
 
-/* Base visual limpia */
 * {
   box-sizing: border-box;
 }
 
 a {
   text-decoration: none;
+  color: inherit;
 }
 
 button,
@@ -52,48 +94,48 @@ textarea {
   font: inherit;
 }
 
-/* Helpers reutilizables */
+/* Legacy helpers mapped to tokens */
 .panel-card {
-  border: 1px solid var(--border-soft);
-  background: var(--panel-bg);
-  border-radius: 1rem;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.22);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-md);
 }
 
 .panel-card-soft {
-  border: 1px solid var(--border-soft);
-  background: var(--panel-dark);
-  border-radius: 1rem;
+  border: 1px solid var(--border);
+  background: var(--surface-muted);
+  border-radius: var(--radius-lg);
 }
 
 .panel-input {
-  border: 1px solid var(--border-soft);
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--foreground);
-  border-radius: 0.75rem;
+  border: 1px solid var(--border);
+  background: var(--surface-muted);
+  color: var(--text);
+  border-radius: var(--radius-md);
 }
 
 .panel-input::placeholder {
-  color: var(--fg-soft);
+  color: var(--text-muted);
 }
 
 .panel-button {
-  border: 1px solid var(--border-soft);
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--foreground);
-  border-radius: 0.75rem;
-  transition: background 0.2s ease, opacity 0.2s ease;
+  border: 1px solid var(--border);
+  background: var(--surface-muted);
+  color: var(--text);
+  border-radius: var(--radius-md);
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .panel-button:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--surface-hover);
 }
 
 .panel-button-primary {
-  background: #ffffff;
-  color: #000000;
-  border-radius: 0.75rem;
-  transition: opacity 0.2s ease;
+  background: var(--text);
+  color: #0b1220;
+  border-radius: var(--radius-md);
+  transition: opacity 0.15s ease;
 }
 
 .panel-button-primary:hover {
@@ -101,9 +143,9 @@ textarea {
 }
 
 .text-muted {
-  color: var(--fg-muted);
+  color: var(--text-secondary);
 }
 
 .text-soft {
-  color: var(--fg-soft);
+  color: var(--text-muted);
 }

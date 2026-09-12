@@ -15,35 +15,16 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Fichagest",
   description: "Control horario y gestión de turnos",
-
   manifest: "/manifest.json",
-
   icons: {
     icon: [
-      {
-        url: "/favicon.ico",
-      },
-      {
-        url: "/favicon-32.png",
-        sizes: "32x32",
-        type: "image/png",
-      },
-      {
-        url: "/favicon-16.png",
-        sizes: "16x16",
-        type: "image/png",
-      },
+      { url: "/favicon.ico" },
+      { url: "/favicon-32.png", sizes: "32x32", type: "image/png" },
+      { url: "/favicon-16.png", sizes: "16x16", type: "image/png" },
     ],
-
-    apple: [
-      {
-        url: "/apple-touch-icon.png",
-      },
-    ],
-
+    apple: [{ url: "/apple-touch-icon.png" }],
     shortcut: ["/favicon.ico"],
   },
-
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
@@ -51,56 +32,11 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased bg-[#111827] text-white`}
-      >
-        {/* TOPBAR GLOBAL */}
-        <header className="border-b border-white/10 bg-black/20 backdrop-blur-xl">
-          <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
-
-            {/* LOGO */}
-            <div className="flex items-center gap-3">
-              <img
-                src="/icon-192.png"
-                alt="Fichagest"
-                className="w-10 h-10 rounded-2xl"
-              />
-
-              <div className="leading-none">
-                <div className="font-semibold text-lg">
-                  Ficha<span className="font-extrabold">gest</span>
-                </div>
-
-                <div className="text-xs text-white/60">
-                  Plataforma de control horario
-                </div>
-              </div>
-            </div>
-
-            {/* MARCA */}
-            <div className="text-sm text-white/60">
-              SaaS laboral
-            </div>
-
-          </div>
-        </header>
-
-        {/* CONTENIDO APP */}
-        <main className="max-w-7xl mx-auto px-6 py-8">
-          {children}
-        </main>
-
-        {/* FOOTER */}
-        <footer className="max-w-7xl mx-auto px-6 pb-8 text-xs text-white/40">
-          Fichagest · Sistema profesional de control horario
-        </footer>
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+        {children}
       </body>
     </html>
   );

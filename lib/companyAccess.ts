@@ -1,6 +1,11 @@
-import { supabase } from "@/lib/supabaseClient";
+import { createClient } from "@/lib/supabase/client";
 
+/**
+ * Client helper: session + company blocked flag.
+ * Prefer middleware / server layouts for hard route protection.
+ */
 export async function getMyCompanyAccess() {
+  const supabase = createClient();
   const { data: sess, error: sessErr } = await supabase.auth.getSession();
   if (sessErr) throw new Error(sessErr.message);
   if (!sess.session) return { session: null, blocked: false, companyId: null };

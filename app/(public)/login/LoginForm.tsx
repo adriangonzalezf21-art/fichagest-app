@@ -83,7 +83,6 @@ export default function LoginForm() {
         }
       }
 
-      // Full navigation so proxy/middleware reads the auth cookies.
       window.location.assign(next);
     } catch (e: unknown) {
       setErrorMsg(authErrorMessage(e));
@@ -96,24 +95,23 @@ export default function LoginForm() {
       <header className="relative z-10 flex items-center justify-between px-5 py-5 sm:px-8">
         <a
           href={IBEROGEST_HOME}
-          className="inline-flex items-center gap-2 rounded-[var(--radius-md)] px-2 py-1.5 text-sm text-[var(--text-secondary)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+          className="login-back inline-flex items-center gap-2 rounded-[var(--radius-md)] px-2 py-1.5 text-sm text-[var(--text-secondary)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
         >
-          <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden />
+          <ArrowLeft className="login-back-icon h-4 w-4 shrink-0" aria-hidden />
           Volver a Iberogest
         </a>
-        <span className="hidden text-xs text-[var(--text-muted)] sm:inline">
+        <span className="hidden items-center gap-2 text-xs text-[var(--text-muted)] sm:inline-flex">
+          <span className="login-live-dot h-1.5 w-1.5 rounded-full bg-[var(--accent)]" aria-hidden />
           Producto de Iberogest
         </span>
       </header>
 
       <div className="relative z-10 flex flex-1 items-center justify-center px-4 pb-10 pt-2 sm:px-6">
-        <div className="grid w-full max-w-5xl overflow-hidden rounded-[var(--radius-xl)] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-lg)] lg:grid-cols-[1.05fr_0.95fr]">
-          {/* Brand panel */}
+        <div className="login-shell grid w-full max-w-5xl overflow-hidden rounded-[var(--radius-xl)] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-lg)] lg:grid-cols-[1.05fr_0.95fr]">
           <aside className="relative hidden flex-col justify-between overflow-hidden border-r border-[var(--border)] bg-[var(--bg-elevated)] p-10 lg:flex">
-            <div
-              className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,_rgba(99,102,241,0.18),_transparent_55%)]"
-              aria-hidden
-            />
+            <div className="login-orb login-orb-a" aria-hidden />
+            <div className="login-orb login-orb-b" aria-hidden />
+
             <div className="relative">
               <div className="mb-8 flex items-center gap-3">
                 <Image
@@ -142,8 +140,8 @@ export default function LoginForm() {
             </div>
 
             <ul className="relative mt-10 space-y-4">
-              <li className="flex items-start gap-3">
-                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-soft)] text-[var(--accent-hover)]">
+              <li className="login-feature flex items-start gap-3">
+                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-soft)] text-[var(--accent-hover)] transition hover:scale-105">
                   <Clock3 className="h-4 w-4" aria-hidden />
                 </span>
                 <div>
@@ -153,8 +151,8 @@ export default function LoginForm() {
                   </div>
                 </div>
               </li>
-              <li className="flex items-start gap-3">
-                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-soft)] text-[var(--accent-hover)]">
+              <li className="login-feature flex items-start gap-3">
+                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-soft)] text-[var(--accent-hover)] transition hover:scale-105">
                   <Building2 className="h-4 w-4" aria-hidden />
                 </span>
                 <div>
@@ -164,8 +162,8 @@ export default function LoginForm() {
                   </div>
                 </div>
               </li>
-              <li className="flex items-start gap-3">
-                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-soft)] text-[var(--accent-hover)]">
+              <li className="login-feature flex items-start gap-3">
+                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-soft)] text-[var(--accent-hover)] transition hover:scale-105">
                   <ShieldCheck className="h-4 w-4" aria-hidden />
                 </span>
                 <div>
@@ -178,8 +176,7 @@ export default function LoginForm() {
             </ul>
           </aside>
 
-          {/* Form panel */}
-          <section className="flex items-center justify-center p-6 sm:p-10">
+          <section className="login-form-panel flex items-center justify-center p-6 sm:p-10">
             <div className="w-full max-w-sm">
               <div className="mb-8 lg:mb-10">
                 <div className="mb-5 flex items-center gap-3 lg:hidden">
@@ -269,10 +266,10 @@ export default function LoginForm() {
                 </p>
                 <a
                   href={IBEROGEST_HOME}
-                  className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-[var(--accent-hover)] underline-offset-2 hover:underline"
+                  className="login-iberogest mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-[var(--accent-hover)] underline-offset-2 hover:underline"
                 >
                   Ir a la web de Iberogest
-                  <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                  <ArrowRight className="login-iberogest-icon h-3.5 w-3.5" aria-hidden />
                 </a>
               </div>
             </div>

@@ -149,3 +149,133 @@ textarea {
 .text-soft {
   color: var(--text-muted);
 }
+
+/* Login motion — subtle, respects reduced motion */
+@keyframes login-rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes login-orb {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0.55;
+  }
+  50% {
+    transform: translate(18px, -22px) scale(1.08);
+    opacity: 0.85;
+  }
+}
+
+@keyframes login-orb-2 {
+  0%,
+  100% {
+    transform: translate(0, 0) scale(1);
+    opacity: 0.35;
+  }
+  50% {
+    transform: translate(-24px, 16px) scale(1.12);
+    opacity: 0.6;
+  }
+}
+
+@keyframes login-pulse-dot {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.45);
+  }
+  70% {
+    box-shadow: 0 0 0 8px rgba(99, 102, 241, 0);
+  }
+}
+
+.login-shell {
+  animation: login-rise 0.55s ease-out both;
+}
+
+.login-orb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(40px);
+  pointer-events: none;
+  animation: login-orb 12s ease-in-out infinite;
+}
+
+.login-orb-a {
+  top: -4rem;
+  left: -3rem;
+  width: 16rem;
+  height: 16rem;
+  background: rgba(99, 102, 241, 0.35);
+}
+
+.login-orb-b {
+  right: -5rem;
+  bottom: 10%;
+  width: 14rem;
+  height: 14rem;
+  background: rgba(96, 165, 250, 0.22);
+  animation-name: login-orb-2;
+  animation-duration: 15s;
+}
+
+.login-feature {
+  animation: login-rise 0.5s ease-out both;
+}
+
+.login-feature:nth-child(1) {
+  animation-delay: 0.18s;
+}
+.login-feature:nth-child(2) {
+  animation-delay: 0.3s;
+}
+.login-feature:nth-child(3) {
+  animation-delay: 0.42s;
+}
+
+.login-form-panel {
+  animation: login-rise 0.55s ease-out 0.08s both;
+}
+
+.login-live-dot {
+  animation: login-pulse-dot 2.4s ease-out infinite;
+}
+
+.login-back:hover .login-back-icon {
+  transform: translateX(-3px);
+}
+
+.login-back-icon {
+  transition: transform 0.2s ease;
+}
+
+.login-iberogest:hover .login-iberogest-icon {
+  transform: translateX(3px);
+}
+
+.login-iberogest-icon {
+  transition: transform 0.2s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-shell,
+  .login-feature,
+  .login-form-panel,
+  .login-orb,
+  .login-live-dot {
+    animation: none !important;
+  }
+
+  .login-back-icon,
+  .login-iberogest-icon {
+    transition: none !important;
+  }
+}
+

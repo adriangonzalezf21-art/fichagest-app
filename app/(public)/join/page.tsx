@@ -5,6 +5,12 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { validatePassword, MIN_PASSWORD_LENGTH } from "@/lib/passwordPolicy";
+import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
+import { FormField } from "@/components/ui/FormField";
+import { Input } from "@/components/ui/Input";
+import { useToast } from "@/components/ui/Toast";
+import { userFacingError } from "@/lib/userFacingError";
 
 /** Join codes históricos: 6–8 chars. Aceptamos 4–12 alfanuméricos para no romper legacy. */
 function isPlausibleJoinCode(code: string) {
@@ -14,6 +20,7 @@ function isPlausibleJoinCode(code: string) {
 function JoinContent() {
   const sp = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
+  const { error: toastError, success } = useToast();
 
   const code = useMemo(() => (sp.get("code") || "").trim(), [sp]);
 
@@ -129,7 +136,9 @@ function JoinContent() {
       });
 
       if (signUpErr) {
-        setErrorMsg(signUpErr.message);
+        const msg = userFacingError(signUpErr);
+        setErrorMsg(msg);
+        toastError(msg);
         return;
       }
 
@@ -139,104 +148,122 @@ function JoinContent() {
       });
 
       if (signInErr) {
-        setInfoMsg(
-          "Cuenta creada correctamente. Si no entras automáticamente, inicia sesión manualmente."
-        );
+        const info =
+          "Cuenta creada correctamente. Si no entras automáticamente, inicia sesión manualmente.";
+        setInfoMsg(info);
+        success(info);
         return;
       }
 
       window.location.assign("/app");
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Error inesperado.";
+      const message = userFacingError(e);
       setErrorMsg(message);
+      toastError(message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <main className="min-h-screen bg-[#0B0F17] flex items-center justify-center p-6 text-white">
-      <div className="w-[560px] rounded-2xl border border-white/10 bg-white/[0.05] p-8 shadow-[0_20px_60px_rgba(0,0,0,0.35)]">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold tracking-tight">Fichagest</h1>
-          <p className="text-sm text-white/50 mt-1">Alta de trabajador · by Iberogest</p>
+    <main className="flex min-h-screen items-center justify-center p-6">
+      <div className="w-full max-w-lg">
+        <div className="mb-6 text-center">
+          <h1 className="text-2xl font-semibold tracking-tight text-[var(--text)]">Fichagest</h1>
+          <p className="mt-1.5 text-sm text-[var(--text-muted)]">
+            Alta de trabajador · by Iberogest
+          </p>
         </div>
 
-        {checking ? (
-          <p className="text-white/60 text-center">Comprobando invitación...</p>
-        ) : (
-          <>
-            <div className="mb-6 rounded-xl border border-white/10 bg-white/[0.03] p-4">
-              <p className="text-white/70 text-sm">
-                Empresa: <b className="text-white">{companyName ?? "—"}</b>
+        <Card>
+          {checking ? (
+            <p className="text-center text-sm text-[var(--text-secondary)]">
+              Comprobando invitación…
+            </p>
+          ) : (
+            <div className="space-y-4">
+              <div className="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface-muted)] p-4 text-sm text-[var(--text-secondary)]">
+                Empresa: <span className="font-medium text-[var(--text)]">{companyName ?? "—"}</span>
                 <br />
-                Código: <b className="text-white">{code || "—"}</b>
-              </p>
+                Código: <span className="font-medium text-[var(--text)]">{code || "—"}</span>
+              </div>
+
+              {errorMsg ? (
+                <div className="rounded-[var(--radius-md)] border border-[var(--danger)]/30 bg-[var(--danger-soft)] p-3 text-sm text-[var(--danger)]">
+                  {errorMsg}
+                </div>
+              ) : null}
+
+              {infoMsg ? (
+                <div className="rounded-[var(--radius-md)] border border-[var(--success)]/30 bg-[var(--success-soft)] p-3 text-sm text-[var(--success)]">
+                  {infoMsg}
+                </div>
+              ) : null}
+
+              {!checking && companyId ? (
+                <>
+                  <FormField label="Nombre" htmlFor="join-name">
+                    <Input
+                      id="join-name"
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      placeholder="Tu nombre y apellidos"
+                      disabled={loading}
+                    />
+                  </FormField>
+
+                  <FormField label="DNI / NIE" htmlFor="join-dni">
+                    <Input
+                      id="join-dni"
+                      value={dni}
+                      onChange={(e) => setDni(e.target.value)}
+                      placeholder="12345678X / X1234567L"
+                      disabled={loading}
+                    />
+                  </FormField>
+
+                  <FormField label="Email" htmlFor="join-email">
+                    <Input
+                      id="join-email"
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="trabajador@empresa.com"
+                      disabled={loading}
+                      autoComplete="email"
+                    />
+                  </FormField>
+
+                  <FormField label="Contraseña" htmlFor="join-password">
+                    <Input
+                      id="join-password"
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder={`Mínimo ${MIN_PASSWORD_LENGTH} caracteres`}
+                      disabled={loading}
+                      autoComplete="new-password"
+                    />
+                  </FormField>
+
+                  <Button
+                    variant="primary"
+                    className="w-full"
+                    onClick={handleSignup}
+                    loading={loading}
+                    disabled={checking}
+                  >
+                    Crear cuenta y entrar
+                  </Button>
+                </>
+              ) : null}
             </div>
+          )}
+        </Card>
 
-            {errorMsg && (
-              <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-red-100">
-                {errorMsg}
-              </div>
-            )}
-
-            {infoMsg && (
-              <div className="mb-4 rounded-xl border border-green-500/30 bg-green-500/10 p-3 text-green-100">
-                {infoMsg}
-              </div>
-            )}
-
-            {!errorMsg && (
-              <>
-                <label className="text-sm text-white/70">Nombre</label>
-                <input
-                  className="w-full mb-4 mt-1 px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 text-white placeholder-white/40 focus:outline-none focus:border-white/30"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Tu nombre y apellidos"
-                />
-
-                <label className="text-sm text-white/70">DNI / NIE</label>
-                <input
-                  className="w-full mb-4 mt-1 px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 text-white placeholder-white/40 focus:outline-none focus:border-white/30"
-                  value={dni}
-                  onChange={(e) => setDni(e.target.value)}
-                  placeholder="12345678X / X1234567L"
-                />
-
-                <label className="text-sm text-white/70">Email</label>
-                <input
-                  type="email"
-                  className="w-full mb-4 mt-1 px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 text-white placeholder-white/40 focus:outline-none focus:border-white/30"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="trabajador@empresa.com"
-                />
-
-                <label className="text-sm text-white/70">Contraseña</label>
-                <input
-                  type="password"
-                  className="w-full mb-6 mt-1 px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 text-white placeholder-white/40 focus:outline-none focus:border-white/30"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder={`Mínimo ${MIN_PASSWORD_LENGTH} caracteres`}
-                />
-
-                <button
-                  onClick={handleSignup}
-                  disabled={loading || checking}
-                  className="w-full bg-white text-black py-3 px-4 rounded-xl font-medium disabled:opacity-40 hover:opacity-90 transition"
-                >
-                  {loading ? "Creando cuenta..." : "Crear cuenta y entrar"}
-                </button>
-              </>
-            )}
-          </>
-        )}
-
-        <div className="text-center text-xs text-white/40 mt-6">
+        <p className="mt-6 text-center text-xs text-[var(--text-muted)]">
           Acceso para trabajadores invitados por su empresa
-        </div>
+        </p>
       </div>
     </main>
   );
@@ -244,7 +271,13 @@ function JoinContent() {
 
 export default function JoinPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-[#0B0F17] flex items-center justify-center text-white">Cargando...</div>}>
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center text-sm text-[var(--text-secondary)]">
+          Cargando…
+        </div>
+      }
+    >
       <JoinContent />
     </Suspense>
   );

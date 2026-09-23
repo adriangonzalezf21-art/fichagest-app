@@ -52,24 +52,32 @@ export async function requireAppContext(nextPath = "/app") {
   const user = await requireUser(nextPath);
   const profile = await loadProfile(user.id);
 
-  if (!profile) {
-    redirect("/login?next=" + encodeURIComponent(nextPath));
-  }
+  // Avoid /login ↔ /app redirect loops when Auth works but profiles row is missing.
+  const safeProfile: AuthProfile =
+    profile ??
+    ({
+      user_id: user.id,
+      role: "worker",
+      is_owner: false,
+      company_id: null,
+      full_name: null,
+      active: true,
+    } satisfies AuthProfile);
 
   let company: CompanySummary | null = null;
-  if (profile.company_id) {
+  if (safeProfile.company_id) {
     const supabase = await createClient();
     const { data } = await supabase
       .from("companies")
       .select("id, name, cif, enable_shift_planning, blocked")
-      .eq("id", profile.company_id)
+      .eq("id", safeProfile.company_id)
       .maybeSingle<CompanySummary>();
     company = data ?? null;
   }
 
   return {
     user,
-    profile,
+    profile: safeProfile,
     company,
     email: user.email ?? "",
   };

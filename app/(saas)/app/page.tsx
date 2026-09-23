@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/Button";
 import { Card, StatCard } from "@/components/ui/Card";
 import { ErrorState, LoadingState } from "@/components/ui/EmptyState";
 import { PageHeader } from "@/components/ui/PageHeader";
+import { useToast } from "@/components/ui/Toast";
 
 type Profile = {
   role: "admin" | "worker" | string;
@@ -194,6 +195,7 @@ function clockLabel(status: ClockStatus) {
 
 export default function AppHome() {
   const router = useRouter();
+  const { success } = useToast();
 
   const [email, setEmail] = useState("");
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -201,7 +203,6 @@ export default function AppHome() {
   const [loading, setLoading] = useState(true);
   const [blocked, setBlocked] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
 
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
   const [calDays, setCalDays] = useState<CalendarDayRow[]>([]);
@@ -352,12 +353,6 @@ export default function AppHome() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router, calMonth]);
 
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 2500);
-    return () => clearTimeout(t);
-  }, [toast]);
-
   const displayName = profile?.full_name?.trim() || (email ? email.split("@")[0] : "Usuario");
   const weekHours = metrics?.week_hours ?? "00:00";
   const monthHours = metrics?.month_hours ?? "00:00";
@@ -385,12 +380,6 @@ export default function AppHome() {
       />
 
       {errorMsg ? <ErrorState message={errorMsg} onRetry={load} /> : null}
-
-      {toast ? (
-        <div className="fixed bottom-24 right-4 z-50 rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface)] px-4 py-3 text-sm text-[var(--text)] shadow-[var(--shadow-lg)] lg:bottom-6">
-          {toast}
-        </div>
-      ) : null}
 
       {/* Primary clock CTA */}
       <Card className="overflow-hidden !p-0">
@@ -540,8 +529,8 @@ export default function AppHome() {
                       size="sm"
                       onClick={() => {
                         if (!inviteLink) return;
-                        navigator.clipboard.writeText(inviteLink);
-                        setToast("Enlace de invitación copiado");
+                        void navigator.clipboard.writeText(inviteLink);
+                        success("Enlace de invitación copiado");
                       }}
                     >
                       <Copy className="h-3.5 w-3.5" />

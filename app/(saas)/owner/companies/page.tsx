@@ -1,9 +1,29 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import {
+  Building2,
+  Copy,
+  Lock,
+  RefreshCw,
+  Search,
+  Unlock,
+  CalendarClock,
+} from "lucide-react";
+import { supabase } from "@/lib/supabaseClient";
 import { isPlatformOwner } from "@/lib/authz";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Card, StatCard } from "@/components/ui/Card";
+import { EmptyState, ErrorState } from "@/components/ui/EmptyState";
+import { FormField } from "@/components/ui/FormField";
+import { Input, Select } from "@/components/ui/Input";
+import { ConfirmDialog, Modal } from "@/components/ui/Modal";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { PageSkeleton } from "@/components/ui/Skeleton";
+import { useToast } from "@/components/ui/Toast";
+import { userFacingError } from "@/lib/userFacingError";
 
 type MeRow = {
   user_id: string;
@@ -32,6 +52,12 @@ type CompanyUserRow = {
   active: boolean | null;
 };
 
+type ConfirmAction =
+  | { type: "rotate"; companyId: string }
+  | { type: "block"; companyId: string; nextBlocked: boolean }
+  | { type: "planner"; companyId: string; nextEnabled: boolean }
+  | { type: "assignAdmin"; companyId: string };
+
 function randomJoinCode(length = 8) {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let out = "";
@@ -43,10 +69,12 @@ function randomJoinCode(length = 8) {
 
 export default function OwnerCompaniesPage() {
   const router = useRouter();
+  const { success, error: toastError, info } = useToast();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [busyCompanyId, setBusyCompanyId] = useState<string | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const [me, setMe] = useState<MeRow | null>(null);
   const [companies, setCompanies] = useState<CompanyRow[]>([]);
@@ -56,6 +84,11 @@ export default function OwnerCompaniesPage() {
 
   const [companyName, setCompanyName] = useState("");
   const [companyCif, setCompanyCif] = useState("");
+  const [createOpen, setCreateOpen] = useState(false);
+  const [search, setSearch] = useState("");
+
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
+  const [confirmLoading, setConfirmLoading] = useState(false);
 
   const assertOwnerSession = async (): Promise<MeRow | null> => {
     const { data: sess, error: sessErr } = await supabase.auth.getSession();
@@ -86,6 +119,7 @@ export default function OwnerCompaniesPage() {
 
   const load = async () => {
     setLoading(true);
+    setErrorMsg(null);
 
     try {
       const meRow = await assertOwnerSession();
@@ -126,8 +160,8 @@ export default function OwnerCompaniesPage() {
           groupedUsers[id] = [];
         });
 
-        (profiles ?? []).forEach((p: any) => {
-          const row = p as CompanyUserRow;
+        (profiles ?? []).forEach((p: CompanyUserRow) => {
+          const row = p;
           if (!row.company_id) return;
 
           if ((row.role === "worker" || row.role === "admin") && row.active !== false) {
@@ -150,8 +184,10 @@ export default function OwnerCompaniesPage() {
         setUsersByCompany({});
         setSelectedAdminByCompany({});
       }
-    } catch (e: any) {
-      alert(e?.message ?? "Error inesperado");
+    } catch (e: unknown) {
+      const msg = userFacingError(e);
+      setErrorMsg(msg);
+      toastError(msg);
     } finally {
       setLoading(false);
     }
@@ -159,11 +195,36 @@ export default function OwnerCompaniesPage() {
 
   useEffect(() => {
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const filteredCompanies = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return companies;
+    return companies.filter(
+      (c) =>
+        (c.name || "").toLowerCase().includes(q) ||
+        (c.cif || "").toLowerCase().includes(q) ||
+        (c.join_code || "").toLowerCase().includes(q)
+    );
+  }, [companies, search]);
+
+  const summary = useMemo(() => {
+    const blocked = companies.filter((c) => c.blocked === true).length;
+    const withPlanner = companies.filter((c) => c.enable_shift_planning === true).length;
+    const withoutAdmin = companies.filter((c) => !c.primary_admin_user_id).length;
+    return {
+      total: companies.length,
+      active: companies.length - blocked,
+      blocked,
+      withPlanner,
+      withoutAdmin,
+    };
+  }, [companies]);
 
   const createCompany = async () => {
     if (!companyName.trim()) {
-      alert("Introduce nombre");
+      toastError("Introduce el nombre de la empresa");
       return;
     }
 
@@ -203,27 +264,21 @@ export default function OwnerCompaniesPage() {
         .single();
 
       if (error) {
-        alert(error.message);
+        toastError(userFacingError(error));
         return;
       }
 
       setCompanyName("");
       setCompanyCif("");
+      setCreateOpen(false);
 
       await load();
 
       const link = `${window.location.origin}/join?code=${data.join_code}`;
-
-      alert(`Empresa creada ✅
-
-Código: ${data.join_code}
-
-Link:
-${link}
-
-Después, cuando el usuario se registre, lo asignas como admin desde este panel.`);
-    } catch (e: any) {
-      alert(e?.message ?? "Error creando empresa");
+      success(`Empresa creada. Código: ${data.join_code}`);
+      info(`Enlace de invitación: ${link}`);
+    } catch (e: unknown) {
+      toastError(userFacingError(e, "Error creando empresa"));
     } finally {
       setSaving(false);
     }
@@ -231,16 +286,12 @@ Después, cuando el usuario se registre, lo asignas como admin desde este panel.
 
   const rotateJoinCode = async (companyId: string) => {
     if (!companyBelongsToLoadedSet(companyId)) {
-      alert("Empresa no válida en este contexto.");
+      toastError("Empresa no válida en este contexto.");
       return;
     }
 
-    const ok = confirm(
-      "¿Regenerar el código de invitación?\n\nEl enlace anterior dejará de funcionar."
-    );
-    if (!ok) return;
-
     setBusyCompanyId(companyId);
+    setConfirmLoading(true);
 
     try {
       const owner = await assertOwnerSession();
@@ -268,28 +319,24 @@ Después, cuando el usuario se registre, lo asignas como admin desde este panel.
       if (error) throw error;
 
       await load();
-      alert("Código regenerado ✅");
-    } catch (e: any) {
-      alert(e?.message ?? "Error regenerando código");
+      success("Código regenerado");
+    } catch (e: unknown) {
+      toastError(userFacingError(e, "Error regenerando código"));
     } finally {
       setBusyCompanyId(null);
+      setConfirmLoading(false);
+      setConfirmAction(null);
     }
   };
 
   const toggleBlocked = async (companyId: string, nextBlocked: boolean) => {
     if (!companyBelongsToLoadedSet(companyId)) {
-      alert("Empresa no válida en este contexto.");
+      toastError("Empresa no válida en este contexto.");
       return;
     }
 
-    const ok = confirm(
-      nextBlocked
-        ? "¿BLOQUEAR esta empresa?\n\nSus trabajadores dejarán de poder acceder."
-        : "¿Desbloquear esta empresa?"
-    );
-    if (!ok) return;
-
     setBusyCompanyId(companyId);
+    setConfirmLoading(true);
 
     try {
       const owner = await assertOwnerSession();
@@ -303,29 +350,24 @@ Después, cuando el usuario se registre, lo asignas como admin desde este panel.
       if (error) throw error;
 
       await load();
-      alert(nextBlocked ? "Empresa bloqueada ✅" : "Empresa desbloqueada ✅");
-    } catch (e: any) {
-      alert(e?.message ?? "Error actualizando bloqueo");
+      success(nextBlocked ? "Empresa bloqueada" : "Empresa desbloqueada");
+    } catch (e: unknown) {
+      toastError(userFacingError(e, "Error actualizando bloqueo"));
     } finally {
       setBusyCompanyId(null);
+      setConfirmLoading(false);
+      setConfirmAction(null);
     }
   };
 
   const toggleShiftPlanning = async (companyId: string, nextEnabled: boolean) => {
     if (!companyBelongsToLoadedSet(companyId)) {
-      alert("Empresa no válida en este contexto.");
+      toastError("Empresa no válida en este contexto.");
       return;
     }
 
-    const ok = confirm(
-      nextEnabled
-        ? "¿Activar el planificador de turnos para esta empresa?"
-        : "¿Desactivar el planificador de turnos para esta empresa?"
-    );
-
-    if (!ok) return;
-
     setBusyCompanyId(companyId);
+    setConfirmLoading(true);
 
     try {
       const owner = await assertOwnerSession();
@@ -339,39 +381,39 @@ Después, cuando el usuario se registre, lo asignas como admin desde este panel.
       if (error) throw error;
 
       await load();
-      alert(nextEnabled ? "Planificador activado ✅" : "Planificador desactivado ✅");
-    } catch (e: any) {
-      alert(e?.message ?? "Error actualizando planificador");
+      success(nextEnabled ? "Planificador activado" : "Planificador desactivado");
+    } catch (e: unknown) {
+      toastError(userFacingError(e, "Error actualizando planificador"));
     } finally {
       setBusyCompanyId(null);
+      setConfirmLoading(false);
+      setConfirmAction(null);
     }
   };
 
   const assignAdmin = async (companyId: string) => {
     if (!companyBelongsToLoadedSet(companyId)) {
-      alert("Empresa no válida en este contexto.");
+      toastError("Empresa no válida en este contexto.");
       return;
     }
 
     const userId = selectedAdminByCompany[companyId];
 
     if (!userId) {
-      alert("Selecciona un usuario");
+      toastError("Selecciona un usuario");
+      setConfirmAction(null);
       return;
     }
 
     const companyUsers = usersByCompany[companyId] || [];
     if (!companyUsers.some((u) => u.user_id === userId)) {
-      alert("El usuario seleccionado no pertenece a esta empresa.");
+      toastError("El usuario seleccionado no pertenece a esta empresa.");
+      setConfirmAction(null);
       return;
     }
 
-    const ok = confirm(
-      "¿Asignar este usuario como administrador principal?\n\nSolo se cambiará role=admin (nunca is_owner)."
-    );
-    if (!ok) return;
-
     setBusyCompanyId(companyId);
+    setConfirmLoading(true);
 
     try {
       const owner = await assertOwnerSession();
@@ -394,240 +436,443 @@ Después, cuando el usuario se registre, lo asignas como admin desde este panel.
       if (companyErr) throw companyErr;
 
       await load();
-      alert("Administrador asignado ✅");
-    } catch (e: any) {
-      alert(e?.message ?? "Error asignando administrador");
+      success("Administrador asignado");
+    } catch (e: unknown) {
+      toastError(userFacingError(e, "Error asignando administrador"));
     } finally {
       setBusyCompanyId(null);
+      setConfirmLoading(false);
+      setConfirmAction(null);
     }
   };
 
-  if (loading) {
-    return <div className="text-[var(--text-secondary)]">Cargando...</div>;
+  const runConfirm = () => {
+    if (!confirmAction) return;
+    if (confirmAction.type === "rotate") void rotateJoinCode(confirmAction.companyId);
+    if (confirmAction.type === "block")
+      void toggleBlocked(confirmAction.companyId, confirmAction.nextBlocked);
+    if (confirmAction.type === "planner")
+      void toggleShiftPlanning(confirmAction.companyId, confirmAction.nextEnabled);
+    if (confirmAction.type === "assignAdmin") void assignAdmin(confirmAction.companyId);
+  };
+
+  const confirmCopy = (() => {
+    if (!confirmAction) return { title: "", description: "", danger: false, label: "Confirmar" };
+    switch (confirmAction.type) {
+      case "rotate":
+        return {
+          title: "¿Regenerar código de invitación?",
+          description: "El enlace anterior dejará de funcionar.",
+          danger: false,
+          label: "Regenerar",
+        };
+      case "block":
+        return confirmAction.nextBlocked
+          ? {
+              title: "¿Bloquear esta empresa?",
+              description: "Sus trabajadores dejarán de poder acceder.",
+              danger: true,
+              label: "Bloquear",
+            }
+          : {
+              title: "¿Desbloquear esta empresa?",
+              description: "Los trabajadores podrán volver a acceder.",
+              danger: false,
+              label: "Desbloquear",
+            };
+      case "planner":
+        return confirmAction.nextEnabled
+          ? {
+              title: "¿Activar planificador de turnos?",
+              description: "La empresa podrá usar la planificación semanal.",
+              danger: false,
+              label: "Activar",
+            }
+          : {
+              title: "¿Desactivar planificador de turnos?",
+              description: "La empresa dejará de poder planificar turnos.",
+              danger: false,
+              label: "Desactivar",
+            };
+      case "assignAdmin":
+        return {
+          title: "¿Asignar administrador principal?",
+          description: "Solo se cambiará role=admin (nunca is_owner).",
+          danger: false,
+          label: "Asignar",
+        };
+    }
+  })();
+
+  if (loading && companies.length === 0 && !errorMsg) {
+    return <PageSkeleton />;
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 text-[var(--text)]">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold">Empresas</h1>
-          <p className="text-sm text-white/50">Owner: {me?.full_name}</p>
-        </div>
+    <div className="mx-auto max-w-6xl space-y-6">
+      <PageHeader
+        title="Empresas"
+        description="Gestiona las organizaciones de Fichagest"
+        actions={
+          <>
+            <Button variant="secondary" size="sm" onClick={load} disabled={loading}>
+              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+              Recargar
+            </Button>
+            <Button variant="primary" size="sm" onClick={() => setCreateOpen(true)}>
+              Nueva empresa
+            </Button>
+          </>
+        }
+      />
 
-        <button onClick={load} className="border px-3 py-2 rounded">
-          Recargar
-        </button>
-      </div>
+      {me?.full_name ? (
+        <p className="text-sm text-[var(--text-muted)]">Owner: {me.full_name}</p>
+      ) : null}
 
-      <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-6 shadow-[0_10px_40px_rgba(0,0,0,0.3)]">
-        <h2 className="text-lg font-semibold mb-4">Crear empresa</h2>
+      {errorMsg ? <ErrorState message={errorMsg} onRetry={load} /> : null}
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <input
-            placeholder="Nombre empresa"
-            value={companyName}
-            onChange={(e) => setCompanyName(e.target.value)}
-            className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-white/20"
+      {companies.length > 0 ? (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <StatCard title="Total" value={String(summary.total)} />
+          <StatCard title="Activas" value={String(summary.active)} tone="success" />
+          <StatCard title="Bloqueadas" value={String(summary.blocked)} tone="danger" />
+          <StatCard
+            title="Sin admin"
+            value={String(summary.withoutAdmin)}
+            tone={summary.withoutAdmin > 0 ? "warning" : "default"}
           />
-
-          <input
-            placeholder="CIF"
-            value={companyCif}
-            onChange={(e) => setCompanyCif(e.target.value)}
-            className="w-full rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-white/20"
-          />
-
-          <button
-            onClick={createCompany}
-            disabled={saving}
-            className="rounded-xl bg-white text-black font-medium px-4 py-3 hover:bg-white/90 transition disabled:opacity-50"
-          >
-            {saving ? "Creando..." : "Crear empresa"}
-          </button>
         </div>
+      ) : null}
 
-        <p className="text-xs text-white/40 mt-3">
-          Se generará un código de acceso para enviar al cliente.
-        </p>
-      </div>
+      <Card>
+        <FormField label="Buscar" htmlFor="company-search">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
+            <Input
+              id="company-search"
+              className="pl-10"
+              placeholder="Nombre, CIF o código…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+        </FormField>
+      </Card>
 
-      {companies.length === 0 ? (
-        <div className="border p-4 rounded-xl text-white/60">No hay empresas.</div>
+      {filteredCompanies.length === 0 ? (
+        <EmptyState
+          icon={<Building2 className="h-8 w-8" />}
+          title={companies.length === 0 ? "No hay empresas" : "Sin coincidencias"}
+          description={
+            companies.length === 0
+              ? "Crea la primera organización para empezar."
+              : "Prueba con otro término de búsqueda."
+          }
+          actionLabel={companies.length === 0 ? "Nueva empresa" : undefined}
+          onAction={companies.length === 0 ? () => setCreateOpen(true) : undefined}
+        />
       ) : (
-        companies.map((c) => {
-          const busy = busyCompanyId === c.id;
-          const isBlocked = c.blocked === true;
-          const plannerEnabled = c.enable_shift_planning === true;
-          const companyUsers = usersByCompany[c.id] || [];
+        <>
+          {/* Desktop table-ish cards */}
+          <div className="hidden space-y-4 md:block">
+            {filteredCompanies.map((c) => {
+              const busy = busyCompanyId === c.id;
+              const isBlocked = c.blocked === true;
+              const plannerEnabled = c.enable_shift_planning === true;
+              const companyUsers = usersByCompany[c.id] || [];
 
-          return (
-            <div key={c.id} className="border p-4 rounded-xl">
-              <div className="flex items-start justify-between gap-4 flex-wrap">
-                <div>
-                  <div className="font-bold flex items-center gap-2 flex-wrap">
-                    {c.name}
+              return (
+                <Card key={c.id}>
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="min-w-0 space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="text-lg font-semibold text-[var(--text)]">{c.name}</h2>
+                        {isBlocked ? (
+                          <Badge tone="danger">Bloqueada</Badge>
+                        ) : (
+                          <Badge tone="success">Activa</Badge>
+                        )}
+                        {plannerEnabled ? (
+                          <Badge tone="info">Planificador ON</Badge>
+                        ) : (
+                          <Badge tone="neutral">Planificador OFF</Badge>
+                        )}
+                        {c.primary_admin_user_id ? (
+                          <Badge tone="accent">Admin asignado</Badge>
+                        ) : (
+                          <Badge tone="warning">Sin admin</Badge>
+                        )}
+                      </div>
+                      <div className="grid gap-1 text-sm text-[var(--text-secondary)] sm:grid-cols-2">
+                        <div>CIF: {c.cif || "—"}</div>
+                        <div>Código: {c.join_code}</div>
+                        <div>Trabajadores: {workerCounts[c.id] || 0}</div>
+                        <div>
+                          Plan: {c.plan || "free"} · {c.plan_status || "active"}
+                        </div>
+                      </div>
+                    </div>
 
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          const fullLink = `${window.location.origin}/join?code=${c.join_code}`;
+                          void navigator.clipboard.writeText(fullLink);
+                          success("Enlace copiado");
+                        }}
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                        Copiar link
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          void navigator.clipboard.writeText(c.join_code || "");
+                          success("Código copiado");
+                        }}
+                      >
+                        Copiar código
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => setConfirmAction({ type: "rotate", companyId: c.id })}
+                      >
+                        Nuevo código
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() =>
+                          setConfirmAction({
+                            type: "planner",
+                            companyId: c.id,
+                            nextEnabled: !plannerEnabled,
+                          })
+                        }
+                      >
+                        <CalendarClock className="h-3.5 w-3.5" />
+                        {plannerEnabled ? "Desactivar planificador" : "Activar planificador"}
+                      </Button>
+                      <Button
+                        variant={isBlocked ? "secondary" : "danger"}
+                        size="sm"
+                        disabled={busy}
+                        onClick={() =>
+                          setConfirmAction({
+                            type: "block",
+                            companyId: c.id,
+                            nextBlocked: !isBlocked,
+                          })
+                        }
+                      >
+                        {isBlocked ? (
+                          <>
+                            <Unlock className="h-3.5 w-3.5" />
+                            Desbloquear
+                          </>
+                        ) : (
+                          <>
+                            <Lock className="h-3.5 w-3.5" />
+                            Bloquear
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 border-t border-[var(--border)] pt-4">
+                    <h3 className="mb-3 text-sm font-medium text-[var(--text)]">
+                      Asignar administrador principal
+                    </h3>
+                    <div className="flex flex-wrap items-end gap-3">
+                      <div className="min-w-[280px] flex-1">
+                        <Select
+                          value={selectedAdminByCompany[c.id] || ""}
+                          onChange={(e) =>
+                            setSelectedAdminByCompany((prev) => ({
+                              ...prev,
+                              [c.id]: e.target.value,
+                            }))
+                          }
+                        >
+                          <option value="">Selecciona un usuario</option>
+                          {companyUsers.map((u) => (
+                            <option key={u.user_id} value={u.user_id}>
+                              {(u.full_name || u.user_id.slice(0, 8)) +
+                                ` · ${u.role || "worker"}${u.active === false ? " · inactivo" : ""}`}
+                            </option>
+                          ))}
+                        </Select>
+                      </div>
+                      <Button
+                        variant="accent"
+                        size="sm"
+                        disabled={busy || !companyUsers.length}
+                        onClick={() => setConfirmAction({ type: "assignAdmin", companyId: c.id })}
+                      >
+                        Asignar admin
+                      </Button>
+                    </div>
+                    {!companyUsers.length ? (
+                      <p className="mt-2 text-xs text-[var(--text-muted)]">
+                        Aún no hay usuarios registrados en esta empresa.
+                      </p>
+                    ) : null}
+                  </div>
+                </Card>
+              );
+            })}
+          </div>
+
+          {/* Mobile cards */}
+          <div className="space-y-4 md:hidden">
+            {filteredCompanies.map((c) => {
+              const busy = busyCompanyId === c.id;
+              const isBlocked = c.blocked === true;
+              const plannerEnabled = c.enable_shift_planning === true;
+              const companyUsers = usersByCompany[c.id] || [];
+
+              return (
+                <Card key={c.id}>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-base font-semibold text-[var(--text)]">{c.name}</h2>
                     {isBlocked ? (
-                      <span className="text-xs px-2 py-1 rounded border border-red-400/30 text-red-200 bg-red-500/10">
-                        Bloqueada
-                      </span>
+                      <Badge tone="danger">Bloqueada</Badge>
                     ) : (
-                      <span className="text-xs px-2 py-1 rounded border border-emerald-400/30 text-emerald-200 bg-emerald-500/10">
-                        Activa
-                      </span>
-                    )}
-
-                    {plannerEnabled ? (
-                      <span className="text-xs px-2 py-1 rounded border border-blue-400/30 text-blue-200 bg-blue-500/10">
-                        Planificador ON
-                      </span>
-                    ) : (
-                      <span className="text-xs px-2 py-1 rounded border border-white/10 text-white/50 bg-white/5">
-                        Planificador OFF
-                      </span>
-                    )}
-
-                    {c.primary_admin_user_id ? (
-                      <span className="text-xs px-2 py-1 rounded border border-white/10 text-white/80">
-                        Admin asignado
-                      </span>
-                    ) : (
-                      <span className="text-xs px-2 py-1 rounded border border-yellow-400/30 text-yellow-200 bg-yellow-500/10">
-                        Sin admin
-                      </span>
+                      <Badge tone="success">Activa</Badge>
                     )}
                   </div>
-
-                  <div className="text-sm text-white/60 mt-1">CIF: {c.cif || "—"}</div>
-
-                  <div className="text-sm text-white/60">Código: {c.join_code}</div>
-
-                  <div className="text-sm text-white/60">
-                    👤 Trabajadores: {workerCounts[c.id] || 0}
+                  <div className="mt-2 space-y-1 text-sm text-[var(--text-secondary)]">
+                    <div>CIF: {c.cif || "—"}</div>
+                    <div>Código: {c.join_code}</div>
+                    <div>Trabajadores: {workerCounts[c.id] || 0}</div>
                   </div>
-
-                  <div className="text-sm text-white/60">
-                    Plan: {c.plan || "free"} · Estado: {c.plan_status || "active"}
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        void navigator.clipboard.writeText(
+                          `${window.location.origin}/join?code=${c.join_code}`
+                        );
+                        success("Enlace copiado");
+                      }}
+                    >
+                      Copiar link
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() =>
+                        setConfirmAction({
+                          type: "planner",
+                          companyId: c.id,
+                          nextEnabled: !plannerEnabled,
+                        })
+                      }
+                    >
+                      {plannerEnabled ? "Planif. OFF" : "Planif. ON"}
+                    </Button>
+                    <Button
+                      variant={isBlocked ? "secondary" : "danger"}
+                      size="sm"
+                      disabled={busy}
+                      onClick={() =>
+                        setConfirmAction({
+                          type: "block",
+                          companyId: c.id,
+                          nextBlocked: !isBlocked,
+                        })
+                      }
+                    >
+                      {isBlocked ? "Desbloquear" : "Bloquear"}
+                    </Button>
                   </div>
-
-                  <div className="text-sm text-white/60">
-                    Planificador:{" "}
-                    <span className={plannerEnabled ? "text-blue-200" : "text-white/50"}>
-                      {plannerEnabled ? "Activado" : "Desactivado"}
-                    </span>
+                  <div className="mt-4 space-y-2 border-t border-[var(--border)] pt-4">
+                    <Select
+                      value={selectedAdminByCompany[c.id] || ""}
+                      onChange={(e) =>
+                        setSelectedAdminByCompany((prev) => ({
+                          ...prev,
+                          [c.id]: e.target.value,
+                        }))
+                      }
+                    >
+                      <option value="">Selecciona admin</option>
+                      {companyUsers.map((u) => (
+                        <option key={u.user_id} value={u.user_id}>
+                          {u.full_name || u.user_id.slice(0, 8)}
+                        </option>
+                      ))}
+                    </Select>
+                    <Button
+                      variant="accent"
+                      size="sm"
+                      className="w-full"
+                      disabled={busy || !companyUsers.length}
+                      onClick={() => setConfirmAction({ type: "assignAdmin", companyId: c.id })}
+                    >
+                      Asignar admin
+                    </Button>
                   </div>
-                </div>
-
-                <div className="mt-2 flex gap-2 flex-wrap">
-                  <button
-                    onClick={() => {
-                      const fullLink = `${window.location.origin}/join?code=${c.join_code}`;
-                      navigator.clipboard.writeText(fullLink);
-                      alert("Link copiado ✅");
-                    }}
-                    className="border px-2 py-1 rounded"
-                  >
-                    Copiar link
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      navigator.clipboard.writeText(c.join_code || "");
-                      alert("Código copiado ✅");
-                    }}
-                    className="border px-2 py-1 rounded"
-                  >
-                    Copiar código
-                  </button>
-
-                  <button
-                    onClick={() => rotateJoinCode(c.id)}
-                    className="border px-2 py-1 rounded"
-                    disabled={busy}
-                  >
-                    Nuevo código
-                  </button>
-
-                  {plannerEnabled ? (
-                    <button
-                      onClick={() => toggleShiftPlanning(c.id, false)}
-                      className="border border-blue-400/30 text-blue-100 px-2 py-1 rounded"
-                      disabled={busy}
-                    >
-                      Desactivar planificador
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => toggleShiftPlanning(c.id, true)}
-                      className="border border-blue-400/30 text-blue-100 px-2 py-1 rounded"
-                      disabled={busy}
-                    >
-                      Activar planificador
-                    </button>
-                  )}
-
-                  {isBlocked ? (
-                    <button
-                      onClick={() => toggleBlocked(c.id, false)}
-                      className="border px-2 py-1 rounded"
-                      disabled={busy}
-                    >
-                      Desbloquear
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => toggleBlocked(c.id, true)}
-                      className="border px-2 py-1 rounded"
-                      disabled={busy}
-                    >
-                      Bloquear
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              <div className="mt-4 border-t border-white/10 pt-4">
-                <div className="text-sm font-medium mb-2">Asignar administrador principal</div>
-
-                <div className="flex gap-2 flex-wrap items-center">
-                  <select
-                    value={selectedAdminByCompany[c.id] || ""}
-                    onChange={(e) =>
-                      setSelectedAdminByCompany((prev) => ({
-                        ...prev,
-                        [c.id]: e.target.value,
-                      }))
-                    }
-                    className="min-w-[280px] rounded-xl border border-white/10 bg-black/30 px-4 py-2 text-white"
-                  >
-                    <option value="">Selecciona un usuario</option>
-                    {companyUsers.map((u) => (
-                      <option key={u.user_id} value={u.user_id}>
-                        {(u.full_name || u.user_id.slice(0, 8)) +
-                          ` · ${u.role || "worker"}${u.active === false ? " · inactivo" : ""}`}
-                      </option>
-                    ))}
-                  </select>
-
-                  <button
-                    onClick={() => assignAdmin(c.id)}
-                    className="border px-3 py-2 rounded"
-                    disabled={busy || !companyUsers.length}
-                  >
-                    Asignar admin
-                  </button>
-                </div>
-
-                {!companyUsers.length && (
-                  <p className="text-xs text-white/40 mt-2">
-                    Aún no hay usuarios registrados en esta empresa.
-                  </p>
-                )}
-              </div>
-            </div>
-          );
-        })
+                </Card>
+              );
+            })}
+          </div>
+        </>
       )}
+
+      <Modal open={createOpen} title="Crear empresa" onClose={() => setCreateOpen(false)}>
+        <div className="space-y-4">
+          <FormField label="Nombre" htmlFor="new-company-name">
+            <Input
+              id="new-company-name"
+              placeholder="Nombre de la empresa"
+              value={companyName}
+              onChange={(e) => setCompanyName(e.target.value)}
+            />
+          </FormField>
+          <FormField label="CIF" htmlFor="new-company-cif" hint="Opcional">
+            <Input
+              id="new-company-cif"
+              placeholder="CIF"
+              value={companyCif}
+              onChange={(e) => setCompanyCif(e.target.value)}
+            />
+          </FormField>
+          <p className="text-xs text-[var(--text-muted)]">
+            Se generará un código de acceso para enviar al cliente. Después podrás asignar un
+            administrador cuando se registre.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setCreateOpen(false)} disabled={saving}>
+              Cancelar
+            </Button>
+            <Button variant="primary" onClick={createCompany} loading={saving}>
+              Crear empresa
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        open={!!confirmAction}
+        title={confirmCopy.title}
+        description={confirmCopy.description}
+        confirmLabel={confirmCopy.label}
+        danger={confirmCopy.danger}
+        loading={confirmLoading}
+        onConfirm={runConfirm}
+        onCancel={() => setConfirmAction(null)}
+      />
     </div>
   );
 }

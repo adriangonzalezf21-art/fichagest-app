@@ -2,8 +2,21 @@
 export const dynamic = "force-dynamic";
 
 import { useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import {
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  RefreshCw,
+} from "lucide-react";
+import { supabase } from "@/lib/supabaseClient";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Card, StatCard } from "@/components/ui/Card";
+import { EmptyState, ErrorState, LoadingState } from "@/components/ui/EmptyState";
+import { PageHeader } from "@/components/ui/PageHeader";
 
 type PlannedShiftRow = {
   id: string;
@@ -77,6 +90,25 @@ function formatDateLabel(dateYYYYMMDD: string) {
   });
 }
 
+function formatWeekRange(start: string, end: string) {
+  const [ys, ms, ds] = start.split("-").map(Number);
+  const [ye, me, de] = end.split("-").map(Number);
+  const startDate = new Date(ys, ms - 1, ds);
+  const endDate = new Date(ye, me - 1, de);
+
+  const startLabel = startDate.toLocaleDateString("es-ES", {
+    day: "2-digit",
+    month: "short",
+  });
+  const endLabel = endDate.toLocaleDateString("es-ES", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+
+  return `${startLabel} – ${endLabel}`;
+}
+
 export default function MySchedulePage() {
   const router = useRouter();
 
@@ -108,6 +140,8 @@ export default function MySchedulePage() {
 
     return map;
   }, [planned, weekDays]);
+
+  const todayKey = todayYYYYMMDD();
 
   const goPrevWeek = () => {
     setWeekStart((prev) => addDaysYYYYMMDD(prev, -7));
@@ -186,115 +220,102 @@ export default function MySchedulePage() {
   }, [weekStart]);
 
   return (
-    <div className="mx-auto max-w-6xl">
-      <div className="max-w-6xl mx-auto space-y-6">
-        <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-8 shadow-[0_20px_60px_rgba(0,0,0,0.25)]">
-          <div className="flex items-start justify-between gap-4 flex-wrap mb-6">
-            <div>
-              <div className="text-white/60 text-xs">Fichagest · by Iberogest</div>
-              <h1 className="text-3xl font-bold text-white mt-1">Mis turnos</h1>
-              <p className="text-white/60 mt-1">
-                Semana del <b className="text-white">{weekStart}</b> al{" "}
-                <b className="text-white">{weekEnd}</b>
-              </p>
-            </div>
-
-            <div className="flex gap-3 flex-wrap justify-end">
-              <button
-                onClick={load}
-                disabled={loading}
-                className="rounded-xl border border-white/10 bg-white/[0.06] px-4 py-2 text-sm text-white hover:bg-white/[0.10] transition"
-              >
-                {loading ? "Cargando..." : "Recargar"}
-              </button>
-
-              <a
-                className="rounded-xl border border-white/10 bg-white/[0.06] px-4 py-2 text-sm text-white hover:bg-white/[0.10] transition"
-                href="/clock"
-              >
+    <div className="mx-auto max-w-6xl space-y-6">
+      <PageHeader
+        title="Mi horario"
+        description={`Semana del ${formatWeekRange(weekStart, weekEnd)}`}
+        actions={
+          <>
+            <Button variant="secondary" size="sm" onClick={load} disabled={loading}>
+              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+              Actualizar
+            </Button>
+            <Link href="/clock">
+              <Button variant="primary" size="sm">
+                <Clock3 className="h-4 w-4" />
                 Fichar
-              </a>
+              </Button>
+            </Link>
+          </>
+        }
+      />
 
-              <a
-                className="rounded-xl border border-white/10 bg-white/[0.06] px-4 py-2 text-sm text-white hover:bg-white/[0.10] transition"
-                href="/app"
-              >
-                Panel
-              </a>
+      {errorMsg ? <ErrorState message={errorMsg} onRetry={load} /> : null}
+
+      {!enabled && !loading ? (
+        <EmptyState
+          icon={<CalendarDays className="h-8 w-8" />}
+          title="Planificación no disponible"
+          description="La planificación de turnos no está activada para tu empresa."
+        />
+      ) : (
+        <>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="grid flex-1 gap-3 sm:grid-cols-2">
+              <StatCard title="Turnos" value={String(planned.length)} sub="En esta semana" />
+              <StatCard
+                title="Horas previstas"
+                value={minutesToHHMM(totalMinutes)}
+                sub="Duración planificada"
+                tone="info"
+              />
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="secondary" size="sm" onClick={goPrevWeek} aria-label="Semana anterior">
+                <ChevronLeft className="h-4 w-4" />
+                Anterior
+              </Button>
+              <Button variant="secondary" size="sm" onClick={goCurrentWeek}>
+                Hoy
+              </Button>
+              <Button variant="secondary" size="sm" onClick={goNextWeek} aria-label="Semana siguiente">
+                Siguiente
+                <ChevronRight className="h-4 w-4" />
+              </Button>
             </div>
           </div>
 
-          {errorMsg && (
-            <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-red-100">
-              {errorMsg}
-            </div>
-          )}
-
-          {!enabled && !loading ? (
-            <div className="rounded-2xl border border-yellow-500/30 bg-yellow-500/10 p-5 text-yellow-100">
-              La planificación de turnos no está activada para tu empresa.
-            </div>
+          {loading ? (
+            <LoadingState label="Cargando horario…" />
           ) : (
             <>
-              <div className="border border-white/10 rounded-2xl p-5 mb-6 bg-black/20">
-                <div className="flex items-center justify-between gap-3 flex-wrap">
-                  <div>
-                    <div className="font-bold text-white">Vista semanal</div>
-                    <div className="text-sm text-white/60 mt-1">
-                      Turnos: <b className="text-white">{planned.length}</b> · Horas previstas:{" "}
-                      <b className="text-white">{minutesToHHMM(totalMinutes)}</b>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2 flex-wrap">
-                    <button
-                      onClick={goPrevWeek}
-                      className="rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-sm text-white hover:bg-white/[0.10] transition"
-                    >
-                      ← Semana anterior
-                    </button>
-
-                    <button
-                      onClick={goCurrentWeek}
-                      className="rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-sm text-white hover:bg-white/[0.10] transition"
-                    >
-                      Semana actual
-                    </button>
-
-                    <button
-                      onClick={goNextWeek}
-                      className="rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-sm text-white hover:bg-white/[0.10] transition"
-                    >
-                      Semana siguiente →
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
+              {/* Desktop week grid */}
+              <div className="hidden gap-3 md:grid md:grid-cols-7">
                 {weekDays.map((day) => {
                   const dayShifts = plannedByDay[day] || [];
                   const dayMinutes = dayShifts.reduce(
                     (acc, p) => acc + minutesBetween(p.start_time, p.end_time),
                     0
                   );
+                  const isToday = day === todayKey;
 
                   return (
-                    <div
+                    <Card
                       key={day}
-                      className="rounded-2xl border border-white/10 bg-black/20 p-4 min-h-[170px]"
+                      className={`min-h-[180px] !p-4 ${
+                        isToday
+                          ? "border-[var(--accent)]/40 ring-1 ring-[var(--accent)]/30"
+                          : ""
+                      }`}
                     >
-                      <div className="text-white font-semibold capitalize text-sm">
-                        {formatDateLabel(day)}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="text-sm font-semibold capitalize text-[var(--text)]">
+                          {formatDateLabel(day)}
+                        </div>
+                        {isToday ? <Badge tone="accent">Hoy</Badge> : null}
                       </div>
 
-                      <div className="text-white/45 text-xs mt-1">
-                        {dayShifts.length} turno(s) · {minutesToHHMM(dayMinutes)}
+                      <div className="mt-1 text-xs text-[var(--text-muted)]">
+                        {dayShifts.length === 0
+                          ? "Libre"
+                          : `${dayShifts.length} turno(s) · ${minutesToHHMM(dayMinutes)}`}
                       </div>
 
                       <div className="mt-4 space-y-2">
                         {dayShifts.length === 0 ? (
-                          <div className="text-white/35 text-xs">Sin turno</div>
+                          <div className="rounded-[var(--radius-md)] border border-dashed border-[var(--border)] bg-[var(--surface-muted)] px-3 py-4 text-center text-xs text-[var(--text-muted)]">
+                            Libre
+                          </div>
                         ) : (
                           dayShifts.map((p) => {
                             const crossesMidnight =
@@ -303,77 +324,147 @@ export default function MySchedulePage() {
                             return (
                               <div
                                 key={p.id}
-                                className="rounded-xl border border-white/10 bg-white/[0.04] p-3"
+                                className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-3"
                               >
-                                <div className="text-white text-sm font-medium">
-                                  {p.start_time.slice(0, 5)} - {p.end_time.slice(0, 5)}
+                                <div className="text-sm font-medium text-[var(--text)]">
+                                  {p.start_time.slice(0, 5)} – {p.end_time.slice(0, 5)}
                                   {crossesMidnight ? " (+1 día)" : ""}
                                 </div>
-
-                                <div className="text-white/55 text-xs mt-1">
+                                <div className="mt-1 text-xs text-[var(--text-secondary)]">
                                   {minutesToHHMM(minutesBetween(p.start_time, p.end_time))}
                                 </div>
-
-                                {p.notes && (
-                                  <div className="text-white/45 text-xs mt-2">Nota: {p.notes}</div>
-                                )}
+                                {p.notes ? (
+                                  <div className="mt-2 text-xs text-[var(--text-muted)]">
+                                    {p.notes}
+                                  </div>
+                                ) : null}
                               </div>
                             );
                           })
                         )}
                       </div>
-                    </div>
+                    </Card>
                   );
                 })}
               </div>
 
-              <div className="border border-white/10 rounded-2xl p-5 bg-black/20 mt-6">
-                <div className="font-bold mb-4 text-white">Listado de la semana</div>
+              {/* Mobile day cards */}
+              <div className="space-y-3 md:hidden">
+                {weekDays.map((day) => {
+                  const dayShifts = plannedByDay[day] || [];
+                  const dayMinutes = dayShifts.reduce(
+                    (acc, p) => acc + minutesBetween(p.start_time, p.end_time),
+                    0
+                  );
+                  const isToday = day === todayKey;
 
-                {loading ? (
-                  <p className="text-white/70">Cargando...</p>
-                ) : planned.length === 0 ? (
-                  <p className="text-white/50">No tienes turnos planificados esta semana.</p>
-                ) : (
-                  <div className="space-y-3">
+                  return (
+                    <Card
+                      key={day}
+                      className={
+                        isToday
+                          ? "border-[var(--accent)]/40 ring-1 ring-[var(--accent)]/30"
+                          : ""
+                      }
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold capitalize text-[var(--text)]">
+                            {formatDateLabel(day)}
+                          </div>
+                          <div className="mt-1 text-xs text-[var(--text-muted)]">
+                            {dayShifts.length === 0
+                              ? "Libre"
+                              : `${dayShifts.length} turno(s) · ${minutesToHHMM(dayMinutes)}`}
+                          </div>
+                        </div>
+                        {isToday ? <Badge tone="accent">Hoy</Badge> : null}
+                      </div>
+
+                      <div className="mt-4 space-y-2">
+                        {dayShifts.length === 0 ? (
+                          <div className="rounded-[var(--radius-md)] border border-dashed border-[var(--border)] bg-[var(--surface-muted)] px-3 py-4 text-center text-sm text-[var(--text-muted)]">
+                            Libre
+                          </div>
+                        ) : (
+                          dayShifts.map((p) => {
+                            const crossesMidnight =
+                              p.end_time.slice(0, 5) <= p.start_time.slice(0, 5);
+
+                            return (
+                              <div
+                                key={p.id}
+                                className="rounded-[var(--radius-md)] border border-[var(--border)] bg-[var(--surface-muted)] p-3"
+                              >
+                                <div className="text-sm font-medium text-[var(--text)]">
+                                  {p.start_time.slice(0, 5)} – {p.end_time.slice(0, 5)}
+                                  {crossesMidnight ? " (+1 día)" : ""}
+                                </div>
+                                <div className="mt-1 text-xs text-[var(--text-secondary)]">
+                                  {minutesToHHMM(minutesBetween(p.start_time, p.end_time))}
+                                </div>
+                                {p.notes ? (
+                                  <div className="mt-2 text-xs text-[var(--text-muted)]">
+                                    {p.notes}
+                                  </div>
+                                ) : null}
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
+
+              {planned.length === 0 ? (
+                <EmptyState
+                  icon={<CalendarDays className="h-8 w-8" />}
+                  title="Sin turnos esta semana"
+                  description="No tienes turnos planificados en el periodo seleccionado."
+                />
+              ) : (
+                <Card>
+                  <div className="mb-4 text-sm font-semibold text-[var(--text)]">
+                    Listado de la semana
+                  </div>
+                  <ul className="divide-y divide-[var(--border)]">
                     {planned.map((p) => {
                       const crossesMidnight =
                         p.end_time.slice(0, 5) <= p.start_time.slice(0, 5);
 
                       return (
-                        <div
+                        <li
                           key={p.id}
-                          className="border border-white/10 rounded-xl p-4 bg-white/[0.03]"
+                          className="flex flex-col gap-1 py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center sm:justify-between"
                         >
-                          <div className="flex justify-between gap-4 flex-wrap">
-                            <div>
-                              <div className="font-bold text-white capitalize">
-                                {formatDateLabel(p.planned_date)}
-                              </div>
-
-                              <div className="text-sm text-white/70 mt-1">
-                                {p.start_time.slice(0, 5)} - {p.end_time.slice(0, 5)}
-                                {crossesMidnight ? " (+1 día)" : ""} ·{" "}
-                                {minutesToHHMM(minutesBetween(p.start_time, p.end_time))}
-                              </div>
-
-                              {p.notes && (
-                                <div className="text-sm text-white/50 mt-1">Nota: {p.notes}</div>
-                              )}
+                          <div>
+                            <div className="text-sm font-medium capitalize text-[var(--text)]">
+                              {formatDateLabel(p.planned_date)}
                             </div>
-
-                            <div className="text-xs text-white/40">Turno planificado</div>
+                            <div className="mt-1 text-sm text-[var(--text-secondary)]">
+                              {p.start_time.slice(0, 5)} – {p.end_time.slice(0, 5)}
+                              {crossesMidnight ? " (+1 día)" : ""} ·{" "}
+                              {minutesToHHMM(minutesBetween(p.start_time, p.end_time))}
+                            </div>
+                            {p.notes ? (
+                              <div className="mt-1 text-xs text-[var(--text-muted)]">
+                                {p.notes}
+                              </div>
+                            ) : null}
                           </div>
-                        </div>
+                          <Badge tone="neutral">Planificado</Badge>
+                        </li>
                       );
                     })}
-                  </div>
-                )}
-              </div>
+                  </ul>
+                </Card>
+              )}
             </>
           )}
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
 }

@@ -1,153 +1,282 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { useSearchParams } from "next/navigation";
+import { ArrowLeft, ArrowRight, Clock3, ShieldCheck, Building2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import { getMyCompanyAccess } from "@/lib/companyAccess";
 import { getSafeInternalPath } from "@/lib/safeRedirect";
+import { Button } from "@/components/ui/Button";
+import { FormField } from "@/components/ui/FormField";
+import { Input } from "@/components/ui/Input";
+
+const IBEROGEST_HOME = "https://iberogest.com";
+
+function authErrorMessage(err: unknown): string {
+  const raw =
+    err instanceof Error
+      ? err.message
+      : typeof err === "object" && err && "message" in err
+        ? String((err as { message: unknown }).message)
+        : "";
+
+  const m = raw.toLowerCase();
+  if (!raw) return "No se ha podido iniciar sesión. Inténtalo de nuevo.";
+  if (m.includes("invalid login") || m.includes("invalid credentials")) {
+    return "Email o contraseña incorrectos.";
+  }
+  if (m.includes("email not confirmed")) {
+    return "Debes confirmar tu email antes de entrar.";
+  }
+  if (m.includes("too many requests") || m.includes("rate limit")) {
+    return "Demasiados intentos. Espera un momento e inténtalo de nuevo.";
+  }
+  if (m.includes("fetch") || m.includes("network") || m.includes("failed to fetch")) {
+    return "No hay conexión con el servidor de autenticación. Revisa tu red.";
+  }
+  if (raw.length <= 140) return raw;
+  console.error("[login]", raw);
+  return "No se ha podido iniciar sesión. Inténtalo de nuevo.";
+}
 
 export default function LoginForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const searchParams = useSearchParams();
   const next = getSafeInternalPath(searchParams.get("next"), "/app");
 
   const signIn = async () => {
+    setErrorMsg(null);
+
+    const cleanedEmail = email.trim();
+    if (!cleanedEmail || !password) {
+      setErrorMsg("Introduce email y contraseña.");
+      return;
+    }
+
     setLoading(true);
     const supabase = createClient();
 
     try {
-      const { error } = await supabase.auth.signInWithPassword({
-        email: email.trim(),
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: cleanedEmail,
         password,
       });
 
       if (error) {
-        alert(error.message);
+        setErrorMsg(authErrorMessage(error));
+        setLoading(false);
         return;
       }
 
-      // Cookies are set by the browser client; full navigation lets middleware see them.
-      const access = await getMyCompanyAccess();
-
-      if (!access.session) {
-        alert("No se ha podido iniciar sesión correctamente.");
-        return;
+      if (!data.session) {
+        const { data: sessData, error: sessErr } = await supabase.auth.getSession();
+        if (sessErr || !sessData.session) {
+          setErrorMsg(
+            "La sesión no se ha establecido correctamente. Recarga e inténtalo de nuevo."
+          );
+          setLoading(false);
+          return;
+        }
       }
 
-      window.location.assign(access.blocked ? "/app" : next);
-    } finally {
+      // Full navigation so proxy/middleware reads the auth cookies.
+      window.location.assign(next);
+    } catch (e: unknown) {
+      setErrorMsg(authErrorMessage(e));
       setLoading(false);
     }
   };
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[#0B0F17] text-white">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.10),_transparent_35%),radial-gradient(circle_at_bottom_right,_rgba(59,130,246,0.16),_transparent_28%)]" />
-      <div className="absolute inset-0 bg-[linear-gradient(to_bottom,rgba(255,255,255,0.03),transparent_20%,transparent_80%,rgba(255,255,255,0.02))]" />
+    <main className="relative flex min-h-screen flex-col">
+      <header className="relative z-10 flex items-center justify-between px-5 py-5 sm:px-8">
+        <a
+          href={IBEROGEST_HOME}
+          className="inline-flex items-center gap-2 rounded-[var(--radius-md)] px-2 py-1.5 text-sm text-[var(--text-secondary)] transition hover:bg-[var(--surface-muted)] hover:text-[var(--text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]"
+        >
+          <ArrowLeft className="h-4 w-4 shrink-0" aria-hidden />
+          Volver a Iberogest
+        </a>
+        <span className="hidden text-xs text-[var(--text-muted)] sm:inline">
+          Producto de Iberogest
+        </span>
+      </header>
 
-      <div className="relative z-10 flex min-h-screen items-center justify-center p-6">
-        <div className="grid w-full max-w-5xl grid-cols-1 overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] shadow-[0_30px_100px_rgba(0,0,0,0.45)] backdrop-blur-xl lg:grid-cols-2">
-          <div className="hidden lg:flex flex-col justify-between border-r border-white/10 bg-[linear-gradient(160deg,rgba(255,255,255,0.08),rgba(255,255,255,0.02))] p-10">
-            <div>
-              <div className="mb-6 inline-flex items-center gap-3">
-                <div className="h-4 w-4 rounded-full bg-[#3B82F6]" />
-                <span className="text-sm font-medium tracking-wide text-white/80">
-                  Fichagest
-                </span>
+      <div className="relative z-10 flex flex-1 items-center justify-center px-4 pb-10 pt-2 sm:px-6">
+        <div className="grid w-full max-w-5xl overflow-hidden rounded-[var(--radius-xl)] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow-lg)] lg:grid-cols-[1.05fr_0.95fr]">
+          {/* Brand panel */}
+          <aside className="relative hidden flex-col justify-between overflow-hidden border-r border-[var(--border)] bg-[var(--bg-elevated)] p-10 lg:flex">
+            <div
+              className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,_rgba(99,102,241,0.18),_transparent_55%)]"
+              aria-hidden
+            />
+            <div className="relative">
+              <div className="mb-8 flex items-center gap-3">
+                <Image
+                  src="/icon-192.png"
+                  alt=""
+                  width={40}
+                  height={40}
+                  className="h-10 w-10 rounded-[var(--radius-md)]"
+                  priority
+                />
+                <div className="leading-tight">
+                  <div className="text-base font-semibold tracking-tight text-[var(--text)]">
+                    Ficha<span className="font-extrabold">gest</span>
+                  </div>
+                  <div className="text-[11px] text-[var(--text-muted)]">by Iberogest</div>
+                </div>
               </div>
 
-              <h1 className="max-w-md text-4xl font-bold leading-tight">
-                Control horario simple, profesional y listo para empresas
+              <h1 className="max-w-md text-3xl font-semibold leading-tight tracking-tight text-[var(--text)]">
+                Control horario claro para tu equipo
               </h1>
-
-              <p className="mt-5 max-w-md text-sm leading-6 text-white/60">
-                Control de jornada desde una sola plataforma.
+              <p className="mt-4 max-w-sm text-sm leading-6 text-[var(--text-secondary)]">
+                Ficha, gestiona vacaciones y planifica turnos desde una única plataforma
+                profesional.
               </p>
             </div>
 
-            <div className="space-y-4">
-              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                <div className="text-sm font-semibold text-white">Acceso centralizado</div>
-                <div className="mt-1 text-xs text-white/55">
-                  Controla tu empresa desde un solo panel
+            <ul className="relative mt-10 space-y-4">
+              <li className="flex items-start gap-3">
+                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-soft)] text-[var(--accent-hover)]">
+                  <Clock3 className="h-4 w-4" aria-hidden />
+                </span>
+                <div>
+                  <div className="text-sm font-medium text-[var(--text)]">Fichaje sencillo</div>
+                  <div className="mt-0.5 text-xs text-[var(--text-muted)]">
+                    Entrada, pausa y salida en segundos
+                  </div>
                 </div>
-              </div>
-
-              <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-                <div className="text-sm font-semibold text-white">Preparado para crecer</div>
-                <div className="mt-1 text-xs text-white/55">
-                  Multiempresa, gestión de usuarios y control operativo.
+              </li>
+              <li className="flex items-start gap-3">
+                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-soft)] text-[var(--accent-hover)]">
+                  <Building2 className="h-4 w-4" aria-hidden />
+                </span>
+                <div>
+                  <div className="text-sm font-medium text-[var(--text)]">Multiempresa</div>
+                  <div className="mt-0.5 text-xs text-[var(--text-muted)]">
+                    Pensado para asesorías y pymes
+                  </div>
                 </div>
-              </div>
-            </div>
-          </div>
+              </li>
+              <li className="flex items-start gap-3">
+                <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-[var(--radius-md)] bg-[var(--accent-soft)] text-[var(--accent-hover)]">
+                  <ShieldCheck className="h-4 w-4" aria-hidden />
+                </span>
+                <div>
+                  <div className="text-sm font-medium text-[var(--text)]">Cumplimiento laboral</div>
+                  <div className="mt-0.5 text-xs text-[var(--text-muted)]">
+                    Registro de jornada listo para exportación
+                  </div>
+                </div>
+              </li>
+            </ul>
+          </aside>
 
-          <div className="flex items-center justify-center p-6 sm:p-10">
-            <div className="w-full max-w-md">
-              <div className="mb-8 text-center">
-                <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.06] shadow-[0_10px_30px_rgba(0,0,0,0.25)]">
-                  <div className="h-5 w-5 rounded-full bg-[#3B82F6]" />
+          {/* Form panel */}
+          <section className="flex items-center justify-center p-6 sm:p-10">
+            <div className="w-full max-w-sm">
+              <div className="mb-8 lg:mb-10">
+                <div className="mb-5 flex items-center gap-3 lg:hidden">
+                  <Image
+                    src="/icon-192.png"
+                    alt=""
+                    width={36}
+                    height={36}
+                    className="h-9 w-9 rounded-[var(--radius-md)]"
+                    priority
+                  />
+                  <div className="leading-tight">
+                    <div className="text-sm font-semibold tracking-tight">
+                      Ficha<span className="font-extrabold">gest</span>
+                    </div>
+                    <div className="text-[11px] text-[var(--text-muted)]">by Iberogest</div>
+                  </div>
                 </div>
 
-                <h2 className="text-3xl font-bold tracking-tight">Fichagest</h2>
-                <p className="mt-2 text-sm text-white/50">
-                  Control horario · by Iberogest
+                <h2 className="text-2xl font-semibold tracking-tight text-[var(--text)]">
+                  Iniciar sesión
+                </h2>
+                <p className="mt-2 text-sm text-[var(--text-secondary)]">
+                  Accede a tu panel de control horario
                 </p>
               </div>
 
-              <div className="rounded-2xl border border-white/10 bg-black/20 p-5 shadow-[0_10px_40px_rgba(0,0,0,0.25)]">
-                <label className="mb-2 block text-sm text-white/70">Email</label>
-                <input
-                  type="email"
-                  placeholder="tuemail@empresa.com"
-                  className="w-full mb-4 px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 text-white placeholder-white/35 focus:outline-none focus:border-white/30 focus:ring-2 focus:ring-white/10"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  disabled={loading}
-                  autoComplete="email"
-                />
+              <form
+                className="space-y-4"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void signIn();
+                }}
+              >
+                {errorMsg ? (
+                  <div
+                    role="alert"
+                    className="rounded-[var(--radius-md)] border border-[var(--danger)]/30 bg-[var(--danger-soft)] px-3 py-2.5 text-sm text-[var(--danger)]"
+                  >
+                    {errorMsg}
+                  </div>
+                ) : null}
 
-                <label className="mb-2 block text-sm text-white/70">Contraseña</label>
-                <input
-                  type="password"
-                  placeholder="Tu contraseña"
-                  className="w-full mb-6 px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10 text-white placeholder-white/35 focus:outline-none focus:border-white/30 focus:ring-2 focus:ring-white/10"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  disabled={loading}
-                  autoComplete="current-password"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") void signIn();
-                  }}
-                />
+                <FormField label="Email" htmlFor="login-email">
+                  <Input
+                    id="login-email"
+                    type="email"
+                    placeholder="tuemail@empresa.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    disabled={loading}
+                    autoComplete="email"
+                    required
+                  />
+                </FormField>
 
-                <button
-                  type="button"
-                  onClick={signIn}
-                  disabled={loading}
-                  className="w-full rounded-xl bg-white py-3 text-black font-semibold transition hover:opacity-90 disabled:opacity-50 shadow-[0_10px_30px_rgba(255,255,255,0.08)]"
-                >
-                  {loading ? "Accediendo..." : "Iniciar sesión"}
-                </button>
+                <FormField label="Contraseña" htmlFor="login-password">
+                  <Input
+                    id="login-password"
+                    type="password"
+                    placeholder="Tu contraseña"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    disabled={loading}
+                    autoComplete="current-password"
+                    required
+                  />
+                </FormField>
 
-                <div className="mt-4 text-center">
+                <div className="flex justify-end">
                   <a
                     href="/forgot-password"
-                    className="text-sm text-white/60 hover:text-white underline"
+                    className="text-sm text-[var(--text-secondary)] underline-offset-2 hover:text-[var(--accent-hover)] hover:underline"
                   >
                     ¿Has olvidado tu contraseña?
                   </a>
                 </div>
-              </div>
 
-              <div className="mt-6 text-center text-xs text-white/35">
-                Sistema de registro de jornada laboral
+                <Button type="submit" variant="accent" size="lg" className="w-full" loading={loading}>
+                  Entrar a Fichagest
+                </Button>
+              </form>
+
+              <div className="mt-8 border-t border-[var(--border)] pt-6 text-center">
+                <p className="text-xs text-[var(--text-muted)]">
+                  ¿Buscas asesoría fiscal, laboral o contable?
+                </p>
+                <a
+                  href={IBEROGEST_HOME}
+                  className="mt-2 inline-flex items-center gap-1.5 text-sm font-medium text-[var(--accent-hover)] underline-offset-2 hover:underline"
+                >
+                  Ir a la web de Iberogest
+                  <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                </a>
               </div>
             </div>
-          </div>
+          </section>
         </div>
       </div>
     </main>

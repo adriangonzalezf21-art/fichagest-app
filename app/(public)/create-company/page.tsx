@@ -12,8 +12,15 @@
  */
 
 import { useState } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { validatePassword, MIN_PASSWORD_LENGTH } from "@/lib/passwordPolicy";
+import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
+import { FormField } from "@/components/ui/FormField";
+import { Input } from "@/components/ui/Input";
+import { useToast } from "@/components/ui/Toast";
+import { userFacingError } from "@/lib/userFacingError";
 
 const MAX_NAME = 120;
 const MAX_CIF = 32;
@@ -37,6 +44,7 @@ export default function CreateCompanyPage() {
 
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const { error: toastError } = useToast();
 
   const handleCreate = async () => {
     if (loading) return;
@@ -78,7 +86,9 @@ export default function CreateCompanyPage() {
       });
 
       if (signUpErr) {
-        setErrorMsg(signUpErr.message);
+        const msg = userFacingError(signUpErr);
+        setErrorMsg(msg);
+        toastError(msg);
         return;
       }
 
@@ -101,7 +111,9 @@ export default function CreateCompanyPage() {
         .single();
 
       if (companyErr) {
-        setErrorMsg(companyErr.message);
+        const msg = userFacingError(companyErr);
+        setErrorMsg(msg);
+        toastError(msg);
         return;
       }
 
@@ -118,92 +130,120 @@ export default function CreateCompanyPage() {
       });
 
       if (profileErr) {
-        setErrorMsg(profileErr.message);
+        const msg = userFacingError(profileErr);
+        setErrorMsg(msg);
+        toastError(msg);
         return;
       }
 
       window.location.assign("/app");
     } catch (e: unknown) {
-      setErrorMsg(e instanceof Error ? e.message : "Error inesperado.");
+      const msg = userFacingError(e);
+      setErrorMsg(msg);
+      toastError(msg);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <main className="min-h-screen bg-gray-100 flex items-center justify-center p-6">
-      <div className="bg-white p-8 rounded-xl shadow-md w-[520px]">
-        <h1 className="text-3xl font-bold mb-2">Crear empresa</h1>
-        <p className="text-sm text-gray-500 mb-6">
-          Alta de administrador de empresa (no platform owner).
-        </p>
+    <main className="flex min-h-screen items-center justify-center p-6">
+      <div className="w-full max-w-lg">
+        <div className="mb-6 text-center">
+          <h1 className="text-2xl font-semibold tracking-tight text-[var(--text)]">
+            Crear empresa
+          </h1>
+          <p className="mt-1.5 text-sm text-[var(--text-secondary)]">
+            Alta de administrador de empresa
+          </p>
+        </div>
 
-        {errorMsg && (
-          <div className="mb-4 p-3 rounded-md border text-red-700 bg-red-50">{errorMsg}</div>
-        )}
+        <Card>
+          <div className="space-y-4">
+            {errorMsg ? (
+              <div className="rounded-[var(--radius-md)] border border-[var(--danger)]/30 bg-[var(--danger-soft)] p-3 text-sm text-[var(--danger)]">
+                {errorMsg}
+              </div>
+            ) : null}
 
-        <label className="text-sm">Nombre de la empresa</label>
-        <input
-          className="w-full mb-4 p-3 border rounded-md"
-          value={companyName}
-          maxLength={MAX_NAME}
-          onChange={(e) => setCompanyName(e.target.value)}
-          placeholder="Ej: Talleres López S.L."
-          disabled={loading}
-        />
+            <FormField label="Nombre de la empresa" htmlFor="cc-name">
+              <Input
+                id="cc-name"
+                value={companyName}
+                maxLength={MAX_NAME}
+                onChange={(e) => setCompanyName(e.target.value)}
+                placeholder="Ej: Talleres López S.L."
+                disabled={loading}
+              />
+            </FormField>
 
-        <label className="text-sm">CIF (recomendado)</label>
-        <input
-          className="w-full mb-4 p-3 border rounded-md"
-          value={companyCif}
-          maxLength={MAX_CIF}
-          onChange={(e) => setCompanyCif(e.target.value)}
-          placeholder="Ej: B12345678"
-          disabled={loading}
-        />
+            <FormField label="CIF" htmlFor="cc-cif" hint="Recomendado">
+              <Input
+                id="cc-cif"
+                value={companyCif}
+                maxLength={MAX_CIF}
+                onChange={(e) => setCompanyCif(e.target.value)}
+                placeholder="Ej: B12345678"
+                disabled={loading}
+              />
+            </FormField>
 
-        <label className="text-sm">Tu nombre</label>
-        <input
-          className="w-full mb-4 p-3 border rounded-md"
-          value={fullName}
-          maxLength={MAX_NAME}
-          onChange={(e) => setFullName(e.target.value)}
-          disabled={loading}
-        />
+            <FormField label="Tu nombre" htmlFor="cc-fullname">
+              <Input
+                id="cc-fullname"
+                value={fullName}
+                maxLength={MAX_NAME}
+                onChange={(e) => setFullName(e.target.value)}
+                disabled={loading}
+              />
+            </FormField>
 
-        <label className="text-sm">Email</label>
-        <input
-          type="email"
-          className="w-full mb-4 p-3 border rounded-md"
-          value={email}
-          maxLength={MAX_EMAIL}
-          onChange={(e) => setEmail(e.target.value)}
-          disabled={loading}
-          autoComplete="email"
-        />
+            <FormField label="Email" htmlFor="cc-email">
+              <Input
+                id="cc-email"
+                type="email"
+                value={email}
+                maxLength={MAX_EMAIL}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={loading}
+                autoComplete="email"
+              />
+            </FormField>
 
-        <label className="text-sm">Contraseña</label>
-        <input
-          type="password"
-          className="w-full mb-6 p-3 border rounded-md"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder={`Mínimo ${MIN_PASSWORD_LENGTH} caracteres`}
-          disabled={loading}
-          autoComplete="new-password"
-        />
+            <FormField label="Contraseña" htmlFor="cc-password">
+              <Input
+                id="cc-password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={`Mínimo ${MIN_PASSWORD_LENGTH} caracteres`}
+                disabled={loading}
+                autoComplete="new-password"
+              />
+            </FormField>
 
-        <button
-          onClick={handleCreate}
-          disabled={loading}
-          className="w-full bg-black text-white py-3 px-4 rounded-md disabled:opacity-40"
-        >
-          {loading ? "Creando..." : "Crear empresa y entrar"}
-        </button>
+            <Button
+              variant="primary"
+              className="w-full"
+              onClick={handleCreate}
+              loading={loading}
+            >
+              Crear empresa y entrar
+            </Button>
 
-        <p className="text-xs text-gray-400 mt-4">
-          Nota: el abuso de altas públicas requiere rate limiting y RLS en servidor; este formulario no
-          sustituye esas capas.
+            <div className="text-center">
+              <Link
+                href="/login"
+                className="text-sm text-[var(--text-secondary)] underline-offset-2 hover:text-[var(--text)] hover:underline"
+              >
+                ¿Ya tienes cuenta? Inicia sesión
+              </Link>
+            </div>
+          </div>
+        </Card>
+
+        <p className="mt-6 text-center text-xs text-[var(--text-muted)]">
+          Este alta crea un administrador de empresa, no un propietario de plataforma.
         </p>
       </div>
     </main>

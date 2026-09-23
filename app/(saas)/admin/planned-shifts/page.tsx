@@ -2,8 +2,28 @@
 export const dynamic = "force-dynamic";
 
 import { useEffect, useMemo, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
+import {
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Trash2,
+} from "lucide-react";
+import { supabase } from "@/lib/supabaseClient";
+import { Button } from "@/components/ui/Button";
+import { Card, StatCard } from "@/components/ui/Card";
+import { EmptyState, ErrorState } from "@/components/ui/EmptyState";
+import { FormField } from "@/components/ui/FormField";
+import { Input, Select } from "@/components/ui/Input";
+import { ConfirmDialog, Modal } from "@/components/ui/Modal";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { PageSkeleton } from "@/components/ui/Skeleton";
+import { useToast } from "@/components/ui/Toast";
+import { userFacingError } from "@/lib/userFacingError";
 
 type WorkerRow = {
   user_id: string;
@@ -94,7 +114,10 @@ function intervalForShift(date: string, start: string, end: string) {
   return { date, startAbs, endAbs };
 }
 
-function shiftsOverlap(a: { startAbs: number; endAbs: number }, b: { startAbs: number; endAbs: number }) {
+function shiftsOverlap(
+  a: { startAbs: number; endAbs: number },
+  b: { startAbs: number; endAbs: number }
+) {
   return a.startAbs < b.endAbs && b.startAbs < a.endAbs;
 }
 
@@ -104,19 +127,31 @@ function minutesToHHMM(mins: number) {
   return `${pad2(h)}:${pad2(m)}`;
 }
 
-function formatDateLabel(dateYYYYMMDD: string) {
+function formatDateLabel(dateYYYYMMDD: string, short = false) {
   const [y, m, d] = dateYYYYMMDD.split("-").map(Number);
   const date = new Date(y, m - 1, d);
 
   return date.toLocaleDateString("es-ES", {
-    weekday: "long",
+    weekday: short ? "short" : "long",
     day: "2-digit",
     month: "2-digit",
   });
 }
 
+function formatWeekRange(from: string, to: string) {
+  const fmt = (iso: string) => {
+    const [y, m, d] = iso.split("-").map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString("es-ES", {
+      day: "2-digit",
+      month: "short",
+    });
+  };
+  return `${fmt(from)} – ${fmt(to)}`;
+}
+
 export default function AdminPlannedShiftsPage() {
   const router = useRouter();
+  const { success, error: toastError } = useToast();
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -131,6 +166,7 @@ export default function AdminPlannedShiftsPage() {
 
   const [selectedUserId, setSelectedUserId] = useState("");
   const [weekStart, setWeekStart] = useState(getWeekKey(todayYYYYMMDD()));
+  const [mobileDay, setMobileDay] = useState(todayYYYYMMDD());
 
   const weekEnd = useMemo(() => addDaysYYYYMMDD(weekStart, 6), [weekStart]);
 
@@ -141,14 +177,22 @@ export default function AdminPlannedShiftsPage() {
   const [duplicateFromDate, setDuplicateFromDate] = useState(todayYYYYMMDD());
   const [duplicateToDate, setDuplicateToDate] = useState(addDaysYYYYMMDD(todayYYYYMMDD(), 7));
 
+  const [createOpen, setCreateOpen] = useState(false);
   const [newUserId, setNewUserId] = useState("");
   const [newDate, setNewDate] = useState(todayYYYYMMDD());
   const [newStart, setNewStart] = useState("09:00");
   const [newEnd, setNewEnd] = useState("17:00");
   const [newNotes, setNewNotes] = useState("");
+  const [formError, setFormError] = useState<string | null>(null);
 
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editing, setEditing] = useState<EditingRow | null>(null);
+  const [editError, setEditError] = useState<string | null>(null);
+
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [duplicateConfirmOpen, setDuplicateConfirmOpen] = useState(false);
+  const [duplicatePanelOpen, setDuplicatePanelOpen] = useState(false);
 
   const nameByUser = useMemo(() => {
     const map: Record<string, string> = {};
@@ -287,8 +331,10 @@ export default function AdminPlannedShiftsPage() {
       if (pErr) throw new Error(pErr.message);
 
       setPlanned((plannedRows ?? []) as PlannedShiftRow[]);
-    } catch (e: any) {
-      setErrorMsg(e?.message ?? "Error inesperado");
+    } catch (e: unknown) {
+      const msg = userFacingError(e);
+      setErrorMsg(msg);
+      toastError(msg);
     } finally {
       setLoading(false);
     }
@@ -298,6 +344,12 @@ export default function AdminPlannedShiftsPage() {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weekStart]);
+
+  useEffect(() => {
+    if (!weekDays.includes(mobileDay)) {
+      setMobileDay(weekStart);
+    }
+  }, [weekDays, weekStart, mobileDay]);
 
   const hasOverlap = (params: {
     user_id: string;
@@ -318,19 +370,31 @@ export default function AdminPlannedShiftsPage() {
     });
   };
 
+  const openCreate = (presetDate?: string) => {
+    setFormError(null);
+    setNewDate(presetDate || mobileDay || todayYYYYMMDD());
+    setNewStart("09:00");
+    setNewEnd("17:00");
+    setNewNotes("");
+    if (!newUserId && workers.length > 0) setNewUserId(workers[0].user_id);
+    setCreateOpen(true);
+  };
+
   const createPlannedShift = async () => {
+    setFormError(null);
+
     if (!companyId) {
-      alert("No se pudo determinar la empresa.");
+      setFormError("No se pudo determinar la empresa.");
       return;
     }
 
     if (!newUserId) {
-      alert("Selecciona un trabajador.");
+      setFormError("Selecciona un trabajador.");
       return;
     }
 
     if (!newDate || !newStart || !newEnd) {
-      alert("Completa fecha, hora inicio y hora fin.");
+      setFormError("Completa fecha, hora de inicio y hora de fin.");
       return;
     }
 
@@ -342,40 +406,46 @@ export default function AdminPlannedShiftsPage() {
         end_time: newEnd,
       })
     ) {
-      alert("Este trabajador ya tiene un turno que se solapa en esa fecha.");
+      setFormError("Este trabajador ya tiene un turno que se solapa en esa fecha.");
       return;
     }
 
     setSaving(true);
 
-    const { data: sess } = await supabase.auth.getSession();
-    const createdBy = sess.session?.user.id ?? null;
+    try {
+      const { data: sess } = await supabase.auth.getSession();
+      const createdBy = sess.session?.user.id ?? null;
 
-    const { error } = await supabase.from("planned_shifts").insert({
-      company_id: companyId,
-      user_id: newUserId,
-      planned_date: newDate,
-      start_time: newStart,
-      end_time: newEnd,
-      break_minutes: 0,
-      notes: newNotes.trim() || null,
-      created_by: createdBy,
-    });
+      const { error } = await supabase.from("planned_shifts").insert({
+        company_id: companyId,
+        user_id: newUserId,
+        planned_date: newDate,
+        start_time: newStart,
+        end_time: newEnd,
+        break_minutes: 0,
+        notes: newNotes.trim() || null,
+        created_by: createdBy,
+      });
 
-    setSaving(false);
+      if (error) throw new Error(error.message);
 
-    if (error) {
-      alert(error.message);
-      return;
+      setNewNotes("");
+      setCreateOpen(false);
+      success("Turno planificado creado");
+      await load();
+    } catch (e: unknown) {
+      const msg = userFacingError(e);
+      setFormError(msg);
+      toastError(msg);
+    } finally {
+      setSaving(false);
     }
-
-    setNewNotes("");
-    await load();
   };
 
-  const duplicateWeek = async () => {
+  const runDuplicateWeek = async () => {
     if (!companyId) {
-      alert("No se pudo determinar la empresa.");
+      toastError("No se pudo determinar la empresa.");
+      setDuplicateConfirmOpen(false);
       return;
     }
 
@@ -383,36 +453,35 @@ export default function AdminPlannedShiftsPage() {
     const toMonday = getWeekKey(duplicateToDate);
 
     if (fromMonday === toMonday) {
-      alert("La semana origen y destino no pueden ser la misma.");
+      toastError("La semana origen y destino no pueden ser la misma.");
+      setDuplicateConfirmOpen(false);
       return;
     }
-
-    const ok = confirm(
-      `¿Duplicar la semana ${fromMonday} en la semana ${toMonday}?\n\nSe copiarán todos los turnos planificados de esa semana.`
-    );
-
-    if (!ok) return;
 
     setDuplicating(true);
 
-    const { error } = await supabase.rpc("duplicate_planned_week", {
-      p_company_id: companyId,
-      p_from_monday: fromMonday,
-      p_to_monday: toMonday,
-    });
+    try {
+      const { error } = await supabase.rpc("duplicate_planned_week", {
+        p_company_id: companyId,
+        p_from_monday: fromMonday,
+        p_to_monday: toMonday,
+      });
 
-    setDuplicating(false);
+      if (error) throw new Error(error.message);
 
-    if (error) {
-      alert(error.message);
-      return;
+      setWeekStart(toMonday);
+      setDuplicateConfirmOpen(false);
+      setDuplicatePanelOpen(false);
+      success("Semana duplicada correctamente");
+    } catch (e: unknown) {
+      toastError(userFacingError(e));
+    } finally {
+      setDuplicating(false);
     }
-
-    setWeekStart(toMonday);
-    alert("Semana duplicada correctamente ✅");
   };
 
   const startEdit = (p: PlannedShiftRow) => {
+    setEditError(null);
     setEditingId(p.id);
     setEditing({
       user_id: p.user_id,
@@ -426,18 +495,20 @@ export default function AdminPlannedShiftsPage() {
   const cancelEdit = () => {
     setEditingId(null);
     setEditing(null);
+    setEditError(null);
   };
 
-  const saveEdit = async (id: string) => {
-    if (!editing) return;
+  const saveEdit = async () => {
+    if (!editing || !editingId) return;
+    setEditError(null);
 
     if (!editing.user_id) {
-      alert("Selecciona un trabajador.");
+      setEditError("Selecciona un trabajador.");
       return;
     }
 
     if (!editing.planned_date || !editing.start_time || !editing.end_time) {
-      alert("Completa fecha, inicio y fin.");
+      setEditError("Completa fecha, inicio y fin.");
       return;
     }
 
@@ -447,442 +518,572 @@ export default function AdminPlannedShiftsPage() {
         planned_date: editing.planned_date,
         start_time: editing.start_time,
         end_time: editing.end_time,
-        ignoreId: id,
+        ignoreId: editingId,
       })
     ) {
-      alert("Este trabajador ya tiene otro turno que se solapa en esa fecha.");
+      setEditError("Este trabajador ya tiene otro turno que se solapa en esa fecha.");
       return;
     }
 
     setSaving(true);
 
-    const { error } = await supabase
-      .from("planned_shifts")
-      .update({
-        user_id: editing.user_id,
-        planned_date: editing.planned_date,
-        start_time: editing.start_time,
-        end_time: editing.end_time,
-        break_minutes: 0,
-        notes: editing.notes.trim() || null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", id)
-      .eq("company_id", companyId);
+    try {
+      const { error } = await supabase
+        .from("planned_shifts")
+        .update({
+          user_id: editing.user_id,
+          planned_date: editing.planned_date,
+          start_time: editing.start_time,
+          end_time: editing.end_time,
+          break_minutes: 0,
+          notes: editing.notes.trim() || null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", editingId)
+        .eq("company_id", companyId);
 
-    setSaving(false);
+      if (error) throw new Error(error.message);
 
-    if (error) {
-      alert(error.message);
-      return;
+      cancelEdit();
+      success("Turno actualizado");
+      await load();
+    } catch (e: unknown) {
+      const msg = userFacingError(e);
+      setEditError(msg);
+      toastError(msg);
+    } finally {
+      setSaving(false);
     }
-
-    cancelEdit();
-    await load();
   };
 
-  const deletePlannedShift = async (id: string) => {
-    const ok = confirm("¿Eliminar este turno planificado?");
-    if (!ok) return;
+  const confirmDelete = async () => {
+    if (!deleteId) return;
 
     if (!companyId) {
-      alert("No se pudo determinar la empresa.");
+      toastError("No se pudo determinar la empresa.");
+      setDeleteId(null);
       return;
     }
 
-    const { error } = await supabase
-      .from("planned_shifts")
-      .delete()
-      .eq("id", id)
-      .eq("company_id", companyId);
+    setDeleting(true);
 
-    if (error) {
-      alert(error.message);
-      return;
+    try {
+      const { error } = await supabase
+        .from("planned_shifts")
+        .delete()
+        .eq("id", deleteId)
+        .eq("company_id", companyId);
+
+      if (error) throw new Error(error.message);
+
+      setDeleteId(null);
+      cancelEdit();
+      success("Turno eliminado");
+      await load();
+    } catch (e: unknown) {
+      toastError(userFacingError(e));
+    } finally {
+      setDeleting(false);
     }
-
-    cancelEdit();
-    await load();
   };
 
   const goPrevWeek = () => setWeekStart((prev) => addDaysYYYYMMDD(prev, -7));
   const goCurrentWeek = () => setWeekStart(getWeekKey(todayYYYYMMDD()));
   const goNextWeek = () => setWeekStart((prev) => addDaysYYYYMMDD(prev, 7));
 
-  return (
-    <div className="mx-auto max-w-7xl">
-      <div className="max-w-7xl mx-auto space-y-6">
-        <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-8 shadow-[0_20px_60px_rgba(0,0,0,0.25)]">
-          <div className="flex items-start justify-between gap-4 flex-wrap mb-6">
-            <div>
-              <div className="text-white/60 text-xs">Fichagest · by Iberogest</div>
-              <h1 className="text-3xl font-bold text-white mt-1">Planificación semanal</h1>
-              <p className="text-white/60 mt-1">
-                Semana del <b className="text-white">{weekStart}</b> al{" "}
-                <b className="text-white">{weekEnd}</b>
-              </p>
+  const renderShiftCard = (p: PlannedShiftRow) => {
+    const crossesMidnight = p.end_time.slice(0, 5) <= p.start_time.slice(0, 5);
+
+    return (
+      <div
+        key={p.id}
+        className="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface-muted)] p-3"
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div className="truncate text-sm font-medium text-[var(--text)]">
+              {nameByUser[p.user_id] || p.user_id.slice(0, 8)}
             </div>
-
-            <div className="flex gap-3 flex-wrap justify-end">
-              <button
-                onClick={() => load()}
-                disabled={loading}
-                className="rounded-xl border border-white/10 bg-white/[0.06] px-4 py-2 text-sm text-white hover:bg-white/[0.10] transition"
-              >
-                {loading ? "Cargando..." : "Recargar"}
-              </button>
-
-              <a className="rounded-xl border border-white/10 bg-white/[0.06] px-4 py-2 text-sm text-white hover:bg-white/[0.10] transition" href="/admin/users">
-                Usuarios
-              </a>
-
-              <a className="rounded-xl border border-white/10 bg-white/[0.06] px-4 py-2 text-sm text-white hover:bg-white/[0.10] transition" href="/admin/shifts">
-                Fichajes
-              </a>
-
-              <a className="rounded-xl border border-white/10 bg-white/[0.06] px-4 py-2 text-sm text-white hover:bg-white/[0.10] transition" href="/app">
-                Panel
-              </a>
+            <div className="mt-1 text-xs text-[var(--text-secondary)]">
+              {p.start_time.slice(0, 5)} – {p.end_time.slice(0, 5)}
+              {crossesMidnight ? " (+1 día)" : ""}
             </div>
+            <div className="mt-1 text-xs text-[var(--text-muted)]">
+              {minutesToHHMM(minutesBetween(p.start_time, p.end_time))}
+            </div>
+            {p.notes ? (
+              <div className="mt-2 text-xs text-[var(--text-muted)] line-clamp-2">
+                {p.notes}
+              </div>
+            ) : null}
           </div>
-
-          {errorMsg && (
-            <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-red-100">
-              {errorMsg}
-            </div>
-          )}
-
-          {!enabled && !loading ? (
-            <div className="rounded-2xl border border-yellow-500/30 bg-yellow-500/10 p-5 text-yellow-100">
-              La planificación de turnos no está activada para esta empresa.
-            </div>
-          ) : (
-            <>
-              <div className="border border-white/10 rounded-2xl p-5 mb-6 bg-black/20">
-                <div className="flex items-center justify-between gap-3 flex-wrap">
-                  <div>
-                    <div className="font-bold text-white">Cuadrante semanal</div>
-                    <div className="text-sm text-white/60 mt-1">
-                      Turnos: <b className="text-white">{visiblePlanned.length}</b> · Horas:{" "}
-                      <b className="text-white">{minutesToHHMM(totalWeekMinutes)}</b>
-                    </div>
-                  </div>
-
-                  <div className="flex gap-2 flex-wrap">
-                    <button onClick={goPrevWeek} className="rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-sm text-white">
-                      ← Semana anterior
-                    </button>
-                    <button onClick={goCurrentWeek} className="rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-sm text-white">
-                      Semana actual
-                    </button>
-                    <button onClick={goNextWeek} className="rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-sm text-white">
-                      Semana siguiente →
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-4">
-                  <div className="text-xs text-white/60 mb-1">Filtrar trabajador</div>
-                  <select
-                    className="border border-white/10 rounded-xl px-3 py-2 text-sm min-w-[260px] bg-white/[0.04] text-white"
-                    value={selectedUserId}
-                    onChange={(e) => setSelectedUserId(e.target.value)}
-                  >
-                    <option value="">Todos</option>
-                    {workers.map((w) => (
-                      <option key={w.user_id} value={w.user_id}>
-                        {w.full_name?.trim() || w.user_id.slice(0, 8)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div className="border border-white/10 rounded-2xl p-5 mb-6 bg-black/20">
-                <div className="font-bold mb-4 text-white">Resumen semanal por trabajador</div>
-
-                {summaryByWorker.length === 0 ? (
-                  <p className="text-white/50">No hay datos para resumir.</p>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                    {summaryByWorker.map((s) => (
-                      <div key={s.user_id} className="border border-white/10 rounded-xl p-4 bg-white/[0.03]">
-                        <div className="font-bold text-white">{s.name}</div>
-                        <div className="text-sm text-white/70 mt-1">
-                          Turnos: <b className="text-white">{s.shifts}</b> · Horas:{" "}
-                          <b className="text-white">{minutesToHHMM(s.totalMinutes)}</b>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <div className="border border-white/10 rounded-2xl p-5 bg-black/20 mb-6">
-                <div className="font-bold mb-4 text-white">Cuadrante</div>
-
-                {loading ? (
-                  <p className="text-white/70">Cargando...</p>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-7 gap-3">
-                    {weekDays.map((day) => {
-                      const dayShifts = plannedByDay[day] || [];
-                      const dayMinutes = dayShifts.reduce(
-                        (acc, p) => acc + minutesBetween(p.start_time, p.end_time),
-                        0
-                      );
-
-                      return (
-                        <div key={day} className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 min-h-[220px]">
-                          <div className="text-white text-sm font-semibold capitalize">
-                            {formatDateLabel(day)}
-                          </div>
-                          <div className="text-white/45 text-xs mt-1">
-                            {dayShifts.length} turno(s) · {minutesToHHMM(dayMinutes)}
-                          </div>
-
-                          <div className="mt-4 space-y-2">
-                            {dayShifts.length === 0 ? (
-                              <div className="text-white/35 text-xs">Sin turnos</div>
-                            ) : (
-                              dayShifts.map((p) => {
-                                const isEditing = editingId === p.id && editing;
-                                const crossesMidnight = p.end_time.slice(0, 5) <= p.start_time.slice(0, 5);
-
-                                return (
-                                  <div
-                                    key={p.id}
-                                    onClick={() => {
-                                      if (!isEditing) startEdit(p);
-                                    }}
-                                    className={[
-                                      "rounded-xl border border-white/10 bg-black/25 p-3 transition",
-                                      isEditing ? "" : "cursor-pointer hover:bg-white/[0.06]",
-                                    ].join(" ")}
-                                  >
-                                    {isEditing ? (
-                                      <div className="space-y-2" onClick={(e) => e.stopPropagation()}>
-                                        <select
-                                          className="w-full border border-white/10 rounded-xl px-2 py-2 text-xs bg-white/[0.04] text-white"
-                                          value={editing.user_id}
-                                          onChange={(e) => setEditing({ ...editing, user_id: e.target.value })}
-                                        >
-                                          {workers.map((w) => (
-                                            <option key={w.user_id} value={w.user_id}>
-                                              {w.full_name?.trim() || w.user_id.slice(0, 8)}
-                                            </option>
-                                          ))}
-                                        </select>
-
-                                        <input
-                                          type="date"
-                                          className="w-full border border-white/10 rounded-xl px-2 py-2 text-xs bg-white/[0.04] text-white"
-                                          value={editing.planned_date}
-                                          onChange={(e) => setEditing({ ...editing, planned_date: e.target.value })}
-                                        />
-
-                                        <div className="grid grid-cols-2 gap-2">
-                                          <input
-                                            type="time"
-                                            className="border border-white/10 rounded-xl px-2 py-2 text-xs bg-white/[0.04] text-white"
-                                            value={editing.start_time}
-                                            onChange={(e) => setEditing({ ...editing, start_time: e.target.value })}
-                                          />
-
-                                          <input
-                                            type="time"
-                                            className="border border-white/10 rounded-xl px-2 py-2 text-xs bg-white/[0.04] text-white"
-                                            value={editing.end_time}
-                                            onChange={(e) => setEditing({ ...editing, end_time: e.target.value })}
-                                          />
-                                        </div>
-
-                                        <input
-                                          className="w-full border border-white/10 rounded-xl px-2 py-2 text-xs bg-white/[0.04] text-white"
-                                          placeholder="Notas"
-                                          value={editing.notes}
-                                          onChange={(e) => setEditing({ ...editing, notes: e.target.value })}
-                                        />
-
-                                        <div className="flex gap-2 flex-wrap">
-                                          <button
-                                            className="rounded-xl bg-white text-black px-3 py-2 text-xs font-medium"
-                                            onClick={() => saveEdit(p.id)}
-                                            disabled={saving}
-                                          >
-                                            Guardar
-                                          </button>
-
-                                          <button
-                                            className="rounded-xl border border-white/10 px-3 py-2 text-xs text-white"
-                                            onClick={cancelEdit}
-                                            disabled={saving}
-                                          >
-                                            Cancelar
-                                          </button>
-
-                                          <button
-                                            className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-100"
-                                            onClick={() => deletePlannedShift(p.id)}
-                                            disabled={saving}
-                                          >
-                                            Eliminar
-                                          </button>
-                                        </div>
-                                      </div>
-                                    ) : (
-                                      <>
-                                        <div className="text-white text-xs font-semibold">
-                                          {nameByUser[p.user_id] || p.user_id.slice(0, 8)}
-                                        </div>
-                                        <div className="text-white/70 text-xs mt-1">
-                                          {p.start_time.slice(0, 5)} - {p.end_time.slice(0, 5)}
-                                          {crossesMidnight ? " (+1 día)" : ""}
-                                        </div>
-                                        <div className="text-white/45 text-xs mt-1">
-                                          {minutesToHHMM(minutesBetween(p.start_time, p.end_time))}
-                                        </div>
-
-                                        {p.notes && (
-                                          <div className="text-white/45 text-xs mt-2">Nota: {p.notes}</div>
-                                        )}
-
-                                        <div className="text-[10px] text-white/35 mt-3">
-                                          Clic para editar
-                                        </div>
-                                      </>
-                                    )}
-                                  </div>
-                                );
-                              })
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              <div className="border border-white/10 rounded-2xl p-5 mb-6 bg-black/20">
-                <div className="font-bold mb-4 text-white">Crear turno planificado</div>
-
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-                  <div className="md:col-span-2">
-                    <div className="text-xs text-white/60 mb-1">Trabajador</div>
-                    <select
-                      className="w-full border border-white/10 rounded-xl px-3 py-2 text-sm bg-white/[0.04] text-white"
-                      value={newUserId}
-                      onChange={(e) => setNewUserId(e.target.value)}
-                    >
-                      <option value="">Selecciona trabajador</option>
-                      {workers.map((w) => (
-                        <option key={w.user_id} value={w.user_id}>
-                          {w.full_name?.trim() || w.user_id.slice(0, 8)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <div className="text-xs text-white/60 mb-1">Fecha</div>
-                    <input
-                      type="date"
-                      className="w-full border border-white/10 rounded-xl px-3 py-2 text-sm bg-white/[0.04] text-white"
-                      value={newDate}
-                      onChange={(e) => setNewDate(e.target.value)}
-                    />
-                  </div>
-
-                  <div>
-                    <div className="text-xs text-white/60 mb-1">Inicio</div>
-                    <input
-                      type="time"
-                      className="w-full border border-white/10 rounded-xl px-3 py-2 text-sm bg-white/[0.04] text-white"
-                      value={newStart}
-                      onChange={(e) => setNewStart(e.target.value)}
-                    />
-                  </div>
-
-                  <div>
-                    <div className="text-xs text-white/60 mb-1">Fin</div>
-                    <input
-                      type="time"
-                      className="w-full border border-white/10 rounded-xl px-3 py-2 text-sm bg-white/[0.04] text-white"
-                      value={newEnd}
-                      onChange={(e) => setNewEnd(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                <div className="mt-2 text-xs text-white/40">
-                  Si la hora de fin es anterior a la de inicio, el turno termina al día siguiente.
-                </div>
-
-                <div className="mt-3">
-                  <div className="text-xs text-white/60 mb-1">Notas</div>
-                  <input
-                    className="w-full border border-white/10 rounded-xl px-3 py-2 text-sm bg-white/[0.04] text-white"
-                    placeholder="Opcional"
-                    value={newNotes}
-                    onChange={(e) => setNewNotes(e.target.value)}
-                  />
-                </div>
-
-                <div className="mt-4">
-                  <button
-                    onClick={createPlannedShift}
-                    disabled={saving || loading}
-                    className="rounded-xl bg-white text-black px-4 py-2 text-sm font-medium disabled:opacity-50"
-                  >
-                    {saving ? "Guardando..." : "+ Crear turno"}
-                  </button>
-                </div>
-              </div>
-
-              <div className="border border-white/10 rounded-2xl p-5 mb-6 bg-black/20">
-                <div className="font-bold mb-4 text-white">Duplicar semana</div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-                  <div>
-                    <div className="text-xs text-white/60 mb-1">Semana origen</div>
-                    <input
-                      type="date"
-                      className="w-full border border-white/10 rounded-xl px-3 py-2 text-sm bg-white/[0.04] text-white"
-                      value={duplicateFromDate}
-                      onChange={(e) => setDuplicateFromDate(e.target.value)}
-                    />
-                    <div className="text-xs text-white/40 mt-1">
-                      Desde lunes {getWeekKey(duplicateFromDate)}
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="text-xs text-white/60 mb-1">Semana destino</div>
-                    <input
-                      type="date"
-                      className="w-full border border-white/10 rounded-xl px-3 py-2 text-sm bg-white/[0.04] text-white"
-                      value={duplicateToDate}
-                      onChange={(e) => setDuplicateToDate(e.target.value)}
-                    />
-                    <div className="text-xs text-white/40 mt-1">
-                      Hasta lunes {getWeekKey(duplicateToDate)}
-                    </div>
-                  </div>
-
-                  <button
-                    onClick={duplicateWeek}
-                    disabled={duplicating || loading}
-                    className="rounded-xl bg-white text-black px-4 py-2 text-sm font-medium disabled:opacity-50"
-                  >
-                    {duplicating ? "Duplicando..." : "Duplicar semana"}
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
+          <div className="flex shrink-0 gap-1">
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="Editar turno"
+              onClick={() => startEdit(p)}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label="Eliminar turno"
+              onClick={() => setDeleteId(p.id)}
+            >
+              <Trash2 className="h-3.5 w-3.5 text-[var(--danger)]" />
+            </Button>
+          </div>
         </div>
       </div>
+    );
+  };
+
+  if (loading && !companyId && !errorMsg) {
+    return <PageSkeleton />;
+  }
+
+  return (
+    <div className="mx-auto max-w-7xl space-y-6">
+      <PageHeader
+        title="Planificación"
+        description="Cuadrante semanal de turnos planificados"
+        actions={
+          <>
+            <Button variant="secondary" size="sm" onClick={() => load()} disabled={loading}>
+              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+              Recargar
+            </Button>
+            {enabled ? (
+              <>
+                <Button variant="secondary" size="sm" onClick={() => setDuplicatePanelOpen(true)}>
+                  <Copy className="h-4 w-4" />
+                  Duplicar
+                </Button>
+                <Button variant="primary" size="sm" onClick={() => openCreate()}>
+                  <Plus className="h-4 w-4" />
+                  Nuevo turno
+                </Button>
+              </>
+            ) : null}
+          </>
+        }
+      />
+
+      {errorMsg ? <ErrorState message={errorMsg} onRetry={() => load()} /> : null}
+
+      {!enabled && !loading ? (
+        <EmptyState
+          icon={<CalendarDays className="h-8 w-8" />}
+          title="Planificación no activada"
+          description="La planificación de turnos no está activada para esta empresa. Contacta con el propietario de la plataforma."
+        />
+      ) : (
+        <>
+          <Card>
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button variant="secondary" size="sm" onClick={goPrevWeek} aria-label="Semana anterior">
+                  <ChevronLeft className="h-4 w-4" />
+                  Semana
+                </Button>
+                <div className="min-w-[11rem] text-center text-sm font-medium text-[var(--text)]">
+                  {formatWeekRange(weekStart, weekEnd)}
+                </div>
+                <Button variant="secondary" size="sm" onClick={goNextWeek} aria-label="Semana siguiente">
+                  Semana
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+                <Button variant="ghost" size="sm" onClick={goCurrentWeek}>
+                  Esta semana
+                </Button>
+              </div>
+
+              <FormField label="Filtrar trabajador" htmlFor="filter-worker">
+                <Select
+                  id="filter-worker"
+                  className="min-w-[220px]"
+                  value={selectedUserId}
+                  onChange={(e) => setSelectedUserId(e.target.value)}
+                >
+                  <option value="">Todos</option>
+                  {workers.map((w) => (
+                    <option key={w.user_id} value={w.user_id}>
+                      {w.full_name?.trim() || w.user_id.slice(0, 8)}
+                    </option>
+                  ))}
+                </Select>
+              </FormField>
+            </div>
+          </Card>
+
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <StatCard title="Turnos esta semana" value={String(visiblePlanned.length)} />
+            <StatCard title="Horas planificadas" value={minutesToHHMM(totalWeekMinutes)} />
+            <StatCard title="Trabajadores" value={String(summaryByWorker.length)} />
+          </div>
+
+          {summaryByWorker.length > 0 ? (
+            <Card>
+              <h2 className="mb-4 text-sm font-semibold text-[var(--text)]">
+                Resumen por trabajador
+              </h2>
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {summaryByWorker.map((s) => (
+                  <div
+                    key={s.user_id}
+                    className="rounded-[var(--radius-lg)] border border-[var(--border)] bg-[var(--surface-muted)] p-4"
+                  >
+                    <div className="font-medium text-[var(--text)]">{s.name}</div>
+                    <div className="mt-1 text-sm text-[var(--text-secondary)]">
+                      {s.shifts} turno{s.shifts === 1 ? "" : "s"} ·{" "}
+                      {minutesToHHMM(s.totalMinutes)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+          ) : null}
+
+          {/* Desktop weekly grid */}
+          <Card className="hidden md:block" padding={false}>
+            <div className="border-b border-[var(--border)] px-5 py-4">
+              <h2 className="text-sm font-semibold text-[var(--text)]">Cuadrante semanal</h2>
+            </div>
+            {loading ? (
+              <div className="p-6 text-sm text-[var(--text-secondary)]">Cargando…</div>
+            ) : (
+              <div className="grid grid-cols-7 gap-px bg-[var(--border)]">
+                {weekDays.map((day) => {
+                  const dayShifts = plannedByDay[day] || [];
+                  const dayMinutes = dayShifts.reduce(
+                    (acc, p) => acc + minutesBetween(p.start_time, p.end_time),
+                    0
+                  );
+
+                  return (
+                    <div key={day} className="min-h-[260px] bg-[var(--surface)] p-3">
+                      <div className="mb-2 flex items-start justify-between gap-1">
+                        <div>
+                          <div className="text-xs font-semibold capitalize text-[var(--text)]">
+                            {formatDateLabel(day, true)}
+                          </div>
+                          <div className="mt-0.5 text-[10px] text-[var(--text-muted)]">
+                            {dayShifts.length} · {minutesToHHMM(dayMinutes)}
+                          </div>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="!px-1.5 !py-1"
+                          aria-label={`Añadir turno el ${day}`}
+                          onClick={() => openCreate(day)}
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                      <div className="space-y-2">
+                        {dayShifts.length === 0 ? (
+                          <p className="text-[11px] text-[var(--text-muted)]">Sin turnos</p>
+                        ) : (
+                          dayShifts.map(renderShiftCard)
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
+
+          {/* Mobile: day selector + list */}
+          <div className="space-y-4 md:hidden">
+            <Card>
+              <h2 className="mb-3 text-sm font-semibold text-[var(--text)]">Día</h2>
+              <div className="flex gap-2 overflow-x-auto pb-1">
+                {weekDays.map((day) => {
+                  const count = (plannedByDay[day] || []).length;
+                  const active = mobileDay === day;
+                  return (
+                    <button
+                      key={day}
+                      type="button"
+                      onClick={() => setMobileDay(day)}
+                      className={`shrink-0 rounded-[var(--radius-md)] border px-3 py-2 text-left transition ${
+                        active
+                          ? "border-[var(--accent)] bg-[var(--accent-soft)]"
+                          : "border-[var(--border)] bg-[var(--surface-muted)]"
+                      }`}
+                    >
+                      <div className="text-xs font-medium capitalize text-[var(--text)]">
+                        {formatDateLabel(day, true)}
+                      </div>
+                      <div className="mt-0.5 text-[10px] text-[var(--text-muted)]">
+                        {count} turno{count === 1 ? "" : "s"}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </Card>
+
+            <Card>
+              <div className="mb-4 flex items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-sm font-semibold capitalize text-[var(--text)]">
+                    {formatDateLabel(mobileDay)}
+                  </h2>
+                  <p className="mt-0.5 text-xs text-[var(--text-muted)]">
+                    {(plannedByDay[mobileDay] || []).length} turno(s)
+                  </p>
+                </div>
+                <Button variant="primary" size="sm" onClick={() => openCreate(mobileDay)}>
+                  <Plus className="h-4 w-4" />
+                  Añadir
+                </Button>
+              </div>
+
+              {loading ? (
+                <p className="text-sm text-[var(--text-secondary)]">Cargando…</p>
+              ) : (plannedByDay[mobileDay] || []).length === 0 ? (
+                <EmptyState
+                  title="Sin turnos este día"
+                  description="Añade un turno planificado para este día."
+                  actionLabel="Nuevo turno"
+                  onAction={() => openCreate(mobileDay)}
+                />
+              ) : (
+                <div className="space-y-2">
+                  {(plannedByDay[mobileDay] || []).map(renderShiftCard)}
+                </div>
+              )}
+            </Card>
+          </div>
+        </>
+      )}
+
+      {/* Create modal */}
+      <Modal open={createOpen} title="Nuevo turno planificado" onClose={() => setCreateOpen(false)}>
+        <div className="space-y-4">
+          <FormField label="Trabajador" htmlFor="new-user" error={formError && !newUserId ? formError : null}>
+            <Select
+              id="new-user"
+              value={newUserId}
+              onChange={(e) => setNewUserId(e.target.value)}
+            >
+              <option value="">Selecciona trabajador</option>
+              {workers.map((w) => (
+                <option key={w.user_id} value={w.user_id}>
+                  {w.full_name?.trim() || w.user_id.slice(0, 8)}
+                </option>
+              ))}
+            </Select>
+          </FormField>
+
+          <FormField label="Fecha" htmlFor="new-date">
+            <Input
+              id="new-date"
+              type="date"
+              value={newDate}
+              onChange={(e) => setNewDate(e.target.value)}
+            />
+          </FormField>
+
+          <div className="grid grid-cols-2 gap-3">
+            <FormField label="Inicio" htmlFor="new-start">
+              <Input
+                id="new-start"
+                type="time"
+                value={newStart}
+                onChange={(e) => setNewStart(e.target.value)}
+              />
+            </FormField>
+            <FormField label="Fin" htmlFor="new-end">
+              <Input
+                id="new-end"
+                type="time"
+                value={newEnd}
+                onChange={(e) => setNewEnd(e.target.value)}
+              />
+            </FormField>
+          </div>
+
+          <p className="text-xs text-[var(--text-muted)]">
+            Si la hora de fin es anterior a la de inicio, el turno termina al día siguiente.
+          </p>
+
+          <FormField label="Notas" htmlFor="new-notes" hint="Opcional">
+            <Input
+              id="new-notes"
+              value={newNotes}
+              onChange={(e) => setNewNotes(e.target.value)}
+              placeholder="Opcional"
+            />
+          </FormField>
+
+          {formError ? <p className="text-sm text-[var(--danger)]">{formError}</p> : null}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="ghost" onClick={() => setCreateOpen(false)} disabled={saving}>
+              Cancelar
+            </Button>
+            <Button variant="primary" onClick={createPlannedShift} loading={saving}>
+              Crear turno
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Edit modal */}
+      <Modal
+        open={!!editingId && !!editing}
+        title="Editar turno"
+        onClose={cancelEdit}
+      >
+        {editing ? (
+          <div className="space-y-4">
+            <FormField label="Trabajador" htmlFor="edit-user">
+              <Select
+                id="edit-user"
+                value={editing.user_id}
+                onChange={(e) => setEditing({ ...editing, user_id: e.target.value })}
+              >
+                {workers.map((w) => (
+                  <option key={w.user_id} value={w.user_id}>
+                    {w.full_name?.trim() || w.user_id.slice(0, 8)}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+
+            <FormField label="Fecha" htmlFor="edit-date">
+              <Input
+                id="edit-date"
+                type="date"
+                value={editing.planned_date}
+                onChange={(e) => setEditing({ ...editing, planned_date: e.target.value })}
+              />
+            </FormField>
+
+            <div className="grid grid-cols-2 gap-3">
+              <FormField label="Inicio" htmlFor="edit-start">
+                <Input
+                  id="edit-start"
+                  type="time"
+                  value={editing.start_time}
+                  onChange={(e) => setEditing({ ...editing, start_time: e.target.value })}
+                />
+              </FormField>
+              <FormField label="Fin" htmlFor="edit-end">
+                <Input
+                  id="edit-end"
+                  type="time"
+                  value={editing.end_time}
+                  onChange={(e) => setEditing({ ...editing, end_time: e.target.value })}
+                />
+              </FormField>
+            </div>
+
+            <FormField label="Notas" htmlFor="edit-notes">
+              <Input
+                id="edit-notes"
+                value={editing.notes}
+                onChange={(e) => setEditing({ ...editing, notes: e.target.value })}
+                placeholder="Opcional"
+              />
+            </FormField>
+
+            {editError ? <p className="text-sm text-[var(--danger)]">{editError}</p> : null}
+
+            <div className="flex flex-wrap justify-between gap-2 pt-2">
+              <Button
+                variant="danger"
+                onClick={() => {
+                  if (editingId) setDeleteId(editingId);
+                }}
+                disabled={saving}
+              >
+                Eliminar
+              </Button>
+              <div className="flex gap-2">
+                <Button variant="ghost" onClick={cancelEdit} disabled={saving}>
+                  Cancelar
+                </Button>
+                <Button variant="primary" onClick={saveEdit} loading={saving}>
+                  Guardar
+                </Button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
+
+      {/* Duplicate panel modal */}
+      <Modal
+        open={duplicatePanelOpen}
+        title="Duplicar semana"
+        onClose={() => setDuplicatePanelOpen(false)}
+      >
+        <div className="space-y-4">
+          <FormField
+            label="Semana origen"
+            htmlFor="dup-from"
+            hint={`Lunes ${getWeekKey(duplicateFromDate)}`}
+          >
+            <Input
+              id="dup-from"
+              type="date"
+              value={duplicateFromDate}
+              onChange={(e) => setDuplicateFromDate(e.target.value)}
+            />
+          </FormField>
+          <FormField
+            label="Semana destino"
+            htmlFor="dup-to"
+            hint={`Lunes ${getWeekKey(duplicateToDate)}`}
+          >
+            <Input
+              id="dup-to"
+              type="date"
+              value={duplicateToDate}
+              onChange={(e) => setDuplicateToDate(e.target.value)}
+            />
+          </FormField>
+          <p className="text-xs text-[var(--text-muted)]">
+            Se copiarán todos los turnos planificados de la semana origen a la destino.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setDuplicatePanelOpen(false)}>
+              Cancelar
+            </Button>
+            <Button variant="accent" onClick={() => setDuplicateConfirmOpen(true)}>
+              Continuar
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      <ConfirmDialog
+        open={duplicateConfirmOpen}
+        title="¿Duplicar semana?"
+        description={`Se copiarán los turnos del lunes ${getWeekKey(duplicateFromDate)} al lunes ${getWeekKey(duplicateToDate)}.`}
+        confirmLabel="Duplicar"
+        loading={duplicating}
+        onConfirm={runDuplicateWeek}
+        onCancel={() => setDuplicateConfirmOpen(false)}
+      />
+
+      <ConfirmDialog
+        open={!!deleteId}
+        title="¿Eliminar turno?"
+        description="Esta acción no se puede deshacer. El turno planificado se eliminará."
+        confirmLabel="Eliminar"
+        danger
+        loading={deleting}
+        onConfirm={confirmDelete}
+        onCancel={() => setDeleteId(null)}
+      />
     </div>
   );
 }

@@ -2,11 +2,30 @@
 export const dynamic = "force-dynamic";
 
 import { useEffect, useMemo, useState } from "react";
+import {
+  Clock3,
+  Download,
+  FileSpreadsheet,
+  FileText,
+  RefreshCw,
+  Search,
+} from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import ExcelJS from "exceljs";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import { canAccessAdminZone } from "@/lib/authz";
+import { Avatar } from "@/components/ui/Avatar";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Card, StatCard } from "@/components/ui/Card";
+import { EmptyState, ErrorState } from "@/components/ui/EmptyState";
+import { FormField } from "@/components/ui/FormField";
+import { Input, Select } from "@/components/ui/Input";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { PageSkeleton } from "@/components/ui/Skeleton";
+import { useToast } from "@/components/ui/Toast";
+import { userFacingError } from "@/lib/userFacingError";
 
 type ShiftRow = {
   id: string;
@@ -129,6 +148,7 @@ function todayYYYYMMDD() {
 }
 
 export default function AdminShiftsPage() {
+  const { success, error: toastError } = useToast();
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -286,7 +306,9 @@ export default function AdminShiftsPage() {
 
       setTotalsByShift(totalsMap);
     } catch (e: any) {
-      setErrorMsg(e?.message ?? "Error inesperado");
+      const msg = userFacingError(e, e?.message ?? "Error inesperado");
+      setErrorMsg(msg);
+      toastError(msg);
     } finally {
       setLoading(false);
     }
@@ -322,7 +344,7 @@ export default function AdminShiftsPage() {
 
   const exportFilteredExcel = async () => {
     if (!myCompanyId) {
-      alert("No se pudo determinar tu empresa. No se exportará nada.");
+      toastError("No se pudo determinar tu empresa. No se exportará nada.");
       return;
     }
 
@@ -358,11 +380,12 @@ export default function AdminShiftsPage() {
     a.download = `turnos_${label}_${dateFrom}_a_${dateTo}.xlsx`;
     a.click();
     URL.revokeObjectURL(url);
+    success("Excel exportado correctamente.");
   };
 
   const exportFilteredPDF = () => {
     if (!myCompanyId) {
-      alert("No se pudo determinar tu empresa. No se exportará nada.");
+      toastError("No se pudo determinar tu empresa. No se exportará nada.");
       return;
     }
 
@@ -539,106 +562,83 @@ export default function AdminShiftsPage() {
       : "todos";
 
     doc.save(`registro_jornada_${label}_${dateFrom}_a_${dateTo}.pdf`);
+    success("PDF exportado correctamente.");
   };
 
+  if (loading && shifts.length === 0 && !errorMsg) {
+    return <PageSkeleton />;
+  }
+
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-6 shadow-[0_20px_60px_rgba(0,0,0,0.25)]">
-      <div className="flex items-start justify-between gap-4 mb-6 flex-wrap">
-        <div>
-          <h2 className="text-xl font-bold text-white">Fichajes empresa</h2>
-          <p className="text-sm text-white/60">
-            {company?.name ? (
-              <>
-                Empresa: <b className="text-white">{company.name}</b> · CIF:{" "}
-                <b className="text-white">{company.cif || "—"}</b>
-              </>
-            ) : (
-              <>
-                Empresa: <b className="text-white">—</b>
-              </>
-            )}
-            <br />
-            Rango: <b className="text-white">{dateFrom}</b> → <b className="text-white">{dateTo}</b>
-            {selectedUserId ? (
-              <>
-                {" "}
-                · Trabajador:{" "}
-                <b className="text-white">
-                  {nameByUser[selectedUserId] || selectedUserId.slice(0, 8)}
-                </b>
-              </>
-            ) : (
-              <>
-                {" "}
-                · Trabajador: <b className="text-white">Todos</b>
-              </>
-            )}
-          </p>
-        </div>
+    <div className="space-y-6">
+      <PageHeader
+        title="Fichajes"
+        description="Consulta y gestiona los registros horarios del equipo"
+        actions={
+          <>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={exportFilteredExcel}
+              disabled={loading || filteredClosed.length === 0}
+              title={filteredClosed.length === 0 ? "No hay turnos cerrados para exportar" : ""}
+            >
+              <FileSpreadsheet className="h-4 w-4" />
+              Exportar Excel
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={exportFilteredPDF}
+              disabled={loading || filteredClosed.length === 0}
+              title={filteredClosed.length === 0 ? "No hay turnos cerrados para exportar" : ""}
+            >
+              <FileText className="h-4 w-4" />
+              Exportar PDF
+            </Button>
+            <Button variant="primary" size="sm" onClick={load} disabled={loading} loading={loading}>
+              <RefreshCw className="h-4 w-4" />
+              {loading ? "Cargando…" : "Aplicar / Recargar"}
+            </Button>
+          </>
+        }
+      />
 
-        <div className="flex gap-2 flex-wrap justify-end">
-          <button
-            className="rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-sm text-white hover:bg-white/[0.10] transition"
-            onClick={exportFilteredExcel}
-            disabled={loading || filteredClosed.length === 0}
-            title={filteredClosed.length === 0 ? "No hay turnos cerrados para exportar" : ""}
-          >
-            Exportar Excel
-          </button>
+      {errorMsg ? <ErrorState message={errorMsg} onRetry={load} /> : null}
 
-          <button
-            className="rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-sm text-white hover:bg-white/[0.10] transition"
-            onClick={exportFilteredPDF}
-            disabled={loading || filteredClosed.length === 0}
-            title={filteredClosed.length === 0 ? "No hay turnos cerrados para exportar" : ""}
-          >
-            Exportar PDF (inspección)
-          </button>
-
-          <button
-            className="rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-sm text-white hover:bg-white/[0.10] transition"
-            onClick={load}
-            disabled={loading}
-          >
-            {loading ? "Cargando..." : "Recargar"}
-          </button>
-        </div>
+      <div className="grid gap-4 sm:grid-cols-3">
+        <StatCard title="Total jornadas" value={String(filtered.length)} sub={company?.name || undefined} />
+        <StatCard title="Horas netas" value={secondsToHHMM(totalNetSeconds)} sub={`${filteredClosed.length} cerradas`} />
+        <StatCard
+          title="En curso"
+          value={String(inCourse)}
+          sub="Turnos abiertos"
+          tone={inCourse > 0 ? "warning" : "default"}
+        />
       </div>
 
-      {errorMsg && (
-        <div className="mb-4 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-red-100">
-          {errorMsg}
-        </div>
-      )}
-
-      <div className="border border-white/10 rounded-2xl p-4 mb-6 bg-black/20">
-        <div className="font-bold mb-3 text-white">Filtros</div>
-
-        <div className="flex gap-3 flex-wrap items-end">
-          <div>
-            <div className="text-xs text-white/60 mb-1">Desde</div>
-            <input
+      <Card>
+        <div className="mb-4 text-sm font-semibold text-[var(--text)]">Filtros</div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <FormField label="Desde" htmlFor="shift-from">
+            <Input
+              id="shift-from"
               type="date"
-              className="border border-white/10 rounded-xl px-3 py-2 text-sm bg-white/[0.04] text-white"
               value={dateFrom}
               onChange={(e) => setDateFrom(e.target.value)}
             />
-          </div>
-
-          <div>
-            <div className="text-xs text-white/60 mb-1">Hasta</div>
-            <input
+          </FormField>
+          <FormField label="Hasta" htmlFor="shift-to">
+            <Input
+              id="shift-to"
               type="date"
-              className="border border-white/10 rounded-xl px-3 py-2 text-sm bg-white/[0.04] text-white"
               value={dateTo}
               onChange={(e) => setDateTo(e.target.value)}
             />
-          </div>
-
-          <div>
-            <div className="text-xs text-white/60 mb-1">Trabajador</div>
-            <select
-              className="border border-white/10 rounded-xl px-3 py-2 text-sm min-w-[240px] bg-white/[0.04] text-white"
+          </FormField>
+          <FormField label="Trabajador" htmlFor="shift-worker">
+            <Select
+              id="shift-worker"
               value={selectedUserId}
               onChange={(e) => setSelectedUserId(e.target.value)}
             >
@@ -648,100 +648,165 @@ export default function AdminShiftsPage() {
                   {w.full_name} {w.dni ? `(${w.dni})` : ""}
                 </option>
               ))}
-            </select>
-          </div>
-
-          <button
-            className="rounded-xl bg-white text-black px-3 py-2 text-sm font-medium"
+            </Select>
+          </FormField>
+          <FormField label="Buscar" htmlFor="shift-search">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--text-muted)]" />
+              <Input
+                id="shift-search"
+                className="pl-9"
+                placeholder="Nombre o DNI/NIE…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+          </FormField>
+        </div>
+        <div className="mt-4 flex flex-wrap items-center gap-4">
+          <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+            <input
+              type="checkbox"
+              className="rounded border-[var(--border)]"
+              checked={onlyInCourse}
+              onChange={(e) => setOnlyInCourse(e.target.checked)}
+            />
+            Solo en curso
+          </label>
+          <Button
+            variant="accent"
+            size="sm"
             onClick={load}
             disabled={loading || !dateFrom || !dateTo}
           >
+            <Download className="h-4 w-4" />
             Aplicar
-          </button>
-
-          <div className="text-sm text-white/60">
-            Mostrando: <b className="text-white">{filtered.length}</b> · Cerrados:{" "}
-            <b className="text-white">{filteredClosed.length}</b> · En curso:{" "}
-            <b className="text-white">{inCourse}</b> · Neto total:{" "}
-            <b className="text-white">{secondsToHHMM(totalNetSeconds)}</b>
-            <span className="ml-2 text-xs text-white/40">
-              (PDF inspección excluye en curso)
-            </span>
-          </div>
+          </Button>
+          <span className="text-xs text-[var(--text-muted)]">
+            PDF de inspección excluye turnos en curso
+          </span>
         </div>
-      </div>
-
-      <div className="flex gap-3 mb-6 flex-wrap items-center">
-        <input
-          className="border border-white/10 rounded-xl px-3 py-2 text-sm bg-white/[0.04] text-white"
-          placeholder="Buscar por trabajador o DNI/NIE..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-
-        <label className="flex items-center gap-2 text-sm text-white/80">
-          <input
-            type="checkbox"
-            checked={onlyInCourse}
-            onChange={(e) => setOnlyInCourse(e.target.checked)}
-          />
-          Solo en curso
-        </label>
-      </div>
+      </Card>
 
       {loading ? (
-        <p className="text-white/70">Cargando...</p>
+        <PageSkeleton />
       ) : filtered.length === 0 ? (
-        <p className="text-white/50">No hay turnos con estos filtros.</p>
+        <EmptyState
+          icon={<Clock3 className="h-8 w-8" />}
+          title="No hay turnos con estos filtros"
+          description="Prueba otro rango de fechas o quita el filtro de trabajador."
+        />
       ) : (
-        <div className="space-y-3">
-          {filtered.map((s) => {
-            const start = new Date(s.started_at);
-            const end = s.ended_at ? new Date(s.ended_at) : null;
+        <>
+          {/* Desktop table */}
+          <Card padding={false} className="hidden overflow-hidden md:block">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[720px] text-left text-sm">
+                <thead>
+                  <tr className="border-b border-[var(--border)] bg-[var(--surface-muted)] text-xs text-[var(--text-muted)]">
+                    <th className="px-5 py-3 font-medium">Trabajador</th>
+                    <th className="px-5 py-3 font-medium">DNI</th>
+                    <th className="px-5 py-3 font-medium">Inicio</th>
+                    <th className="px-5 py-3 font-medium">Fin</th>
+                    <th className="px-5 py-3 font-medium">Neto</th>
+                    <th className="px-5 py-3 font-medium">Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((s) => {
+                    const start = new Date(s.started_at);
+                    const end = s.ended_at ? new Date(s.ended_at) : null;
+                    const t = totalsByShift[s.id] || {
+                      grossSeconds: 0,
+                      breakSeconds: 0,
+                      netSeconds: 0,
+                    };
+                    const who = nameByUser[s.user_id] || s.user_id.slice(0, 8);
+                    const dni = dniByUser[s.user_id] || "—";
+                    const open = !s.ended_at;
 
-            const durMs = (end ? end.getTime() : Date.now()) - start.getTime();
-            const durGrossVisual = msToHHMM(durMs);
+                    return (
+                      <tr
+                        key={s.id}
+                        className="border-b border-[var(--border)] last:border-0 hover:bg-[var(--surface-muted)]/60"
+                      >
+                        <td className="px-5 py-3">
+                          <div className="flex items-center gap-3">
+                            <Avatar name={who} size="sm" />
+                            <span className="font-medium text-[var(--text)]">{who}</span>
+                          </div>
+                        </td>
+                        <td className="px-5 py-3 text-[var(--text-secondary)]">{dni}</td>
+                        <td className="px-5 py-3 text-[var(--text-secondary)]">
+                          {start.toLocaleString()}
+                        </td>
+                        <td className="px-5 py-3 text-[var(--text-secondary)]">
+                          {end ? end.toLocaleString() : "—"}
+                        </td>
+                        <td className="px-5 py-3 font-medium text-[var(--text)]">
+                          {secondsToHHMM(t.netSeconds)}
+                        </td>
+                        <td className="px-5 py-3">
+                          {open ? (
+                            <Badge tone="warning">EN CURSO</Badge>
+                          ) : (
+                            <Badge tone="success">Completa</Badge>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Card>
 
-            const t = totalsByShift[s.id] || {
-              grossSeconds: 0,
-              breakSeconds: 0,
-              netSeconds: 0,
-            };
+          {/* Mobile cards */}
+          <div className="space-y-3 md:hidden">
+            {filtered.map((s) => {
+              const start = new Date(s.started_at);
+              const end = s.ended_at ? new Date(s.ended_at) : null;
+              const durMs = (end ? end.getTime() : Date.now()) - start.getTime();
+              const durGrossVisual = msToHHMM(durMs);
+              const t = totalsByShift[s.id] || {
+                grossSeconds: 0,
+                breakSeconds: 0,
+                netSeconds: 0,
+              };
+              const who = nameByUser[s.user_id] || s.user_id.slice(0, 8);
+              const dni = dniByUser[s.user_id] || "—";
+              const open = !s.ended_at;
 
-            const who = nameByUser[s.user_id] || s.user_id.slice(0, 8);
-            const dni = dniByUser[s.user_id] || "—";
-
-            return (
-              <div
-                key={s.id}
-                className="border border-white/10 rounded-xl p-4 bg-black/20 flex justify-between items-center gap-4"
-              >
-                <div>
-                  <div className="font-bold flex items-center gap-2 text-white">
-                    {who}
-                    <span className="text-xs text-white/50">({dni})</span>
-                    {!s.ended_at && (
-                      <span className="text-xs px-2 py-1 rounded-full border border-white/10 text-white/80">
-                        EN CURSO
-                      </span>
-                    )}
+              return (
+                <Card key={s.id}>
+                  <div className="flex items-start gap-3">
+                    <Avatar name={who} />
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold text-[var(--text)]">{who}</span>
+                        {open ? (
+                          <Badge tone="warning">EN CURSO</Badge>
+                        ) : (
+                          <Badge tone="success">Completa</Badge>
+                        )}
+                      </div>
+                      <div className="mt-1 text-xs text-[var(--text-muted)]">DNI: {dni}</div>
+                      <div className="mt-2 text-sm text-[var(--text-secondary)]">
+                        {start.toLocaleString()} → {end ? end.toLocaleString() : "—"}
+                      </div>
+                      <div className="mt-2 text-sm text-[var(--text)]">
+                        Neto: <span className="font-semibold">{secondsToHHMM(t.netSeconds)}</span>
+                        <span className="ml-2 text-xs text-[var(--text-muted)]">
+                          (bruto visual: {durGrossVisual})
+                        </span>
+                      </div>
+                    </div>
                   </div>
-
-                  <div className="text-sm text-white/70 mt-1">
-                    {start.toLocaleString()} → {end ? end.toLocaleString() : "—"}
-                  </div>
-
-                  <div className="text-sm text-white/60 mt-1">
-                    Neto: <b className="text-white">{secondsToHHMM(t.netSeconds)}</b>
-                    <span className="text-xs text-white/40 ml-2">
-                      (visual bruto: {durGrossVisual})
-                    </span>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
+                </Card>
+              );
+            })}
+          </div>
+        </>
       )}
     </div>
   );

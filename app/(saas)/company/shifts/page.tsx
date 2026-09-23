@@ -7,9 +7,18 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { RefreshCw } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { canAccessAdminZone } from "@/lib/authz";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Card, StatCard } from "@/components/ui/Card";
+import { EmptyState, ErrorState } from "@/components/ui/EmptyState";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { PageSkeleton } from "@/components/ui/Skeleton";
+import { userFacingError } from "@/lib/userFacingError";
 
 type Shift = {
   id: string;
@@ -69,7 +78,7 @@ export default function CompanyShiftsPage() {
       .maybeSingle<MeProfile>();
 
     if (meErr) {
-      setErrorMsg(meErr.message);
+      setErrorMsg(userFacingError(meErr));
       setLoading(false);
       return;
     }
@@ -96,7 +105,7 @@ export default function CompanyShiftsPage() {
       .limit(300);
 
     if (sErr) {
-      setErrorMsg(sErr.message);
+      setErrorMsg(userFacingError(sErr));
       setLoading(false);
       return;
     }
@@ -113,8 +122,6 @@ export default function CompanyShiftsPage() {
         .in("user_id", userIds);
 
       if (pErr) {
-        // si esto fallara por RLS, ahora ya debería estar resuelto con la policy admin_select_company_profiles
-        // pero igualmente lo mostramos bonito
         console.error(pErr);
       } else {
         const map: Record<string, string> = {};
@@ -135,63 +142,72 @@ export default function CompanyShiftsPage() {
 
   const countInCourse = useMemo(() => shifts.filter((s) => !s.ended_at).length, [shifts]);
 
+  if (loading && shifts.length === 0 && !errorMsg) {
+    return <PageSkeleton />;
+  }
+
   return (
-    <main className="min-h-screen bg-gray-100 flex items-center justify-center p-6">
-      <div className="bg-white p-8 rounded-xl shadow-md w-[980px]">
-        <div className="flex justify-between items-start gap-4 mb-6">
-          <div>
-            <h1 className="text-3xl font-bold">Turnos de la empresa</h1>
-            <p className="text-gray-600 mt-1">
-              Empresa: <b>{companyId ? "OK" : "—"}</b> · En curso: <b>{countInCourse}</b> ·
-              Total mostrados: <b>{shifts.length}</b>
-            </p>
-          </div>
+    <div className="mx-auto max-w-5xl space-y-6">
+      <PageHeader
+        title="Turnos de la empresa"
+        description="Vista legacy · usa Admin → Fichajes para el detalle completo"
+        actions={
+          <>
+            <Link href="/admin/shifts">
+              <Button variant="secondary" size="sm">
+                Ir a fichajes
+              </Button>
+            </Link>
+            <Button variant="secondary" size="sm" onClick={load} disabled={loading}>
+              <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+              Recargar
+            </Button>
+          </>
+        }
+      />
 
-          <div className="flex gap-3">
-            <a className="underline text-sm" href="/app">
-              Panel
-            </a>
-            <button className="border px-3 py-2 rounded-md text-sm" onClick={load} disabled={loading}>
-              {loading ? "Cargando..." : "Recargar"}
-            </button>
-          </div>
-        </div>
+      {errorMsg ? <ErrorState message={errorMsg} onRetry={load} /> : null}
 
-        {errorMsg && (
-          <div className="mb-4 p-3 rounded-md border text-red-700 bg-red-50">{errorMsg}</div>
-        )}
-
-        {loading ? (
-          <p className="text-gray-600">Cargando...</p>
-        ) : (
-          <div className="space-y-2">
-            {shifts.map((s) => {
-              const start = new Date(s.started_at);
-              const end = s.ended_at ? new Date(s.ended_at) : null;
-              const dur = end ? msToHHMM(end.getTime() - start.getTime()) : "—";
-              const who = nameByUser[s.user_id] || s.user_id.slice(0, 8);
-
-              return (
-                <div key={s.id} className="border rounded-md p-4 flex justify-between">
-                  <div>
-                    <div className="font-bold">{who}</div>
-                    <div className="text-sm text-gray-700">
-                      {start.toLocaleString()} → {end ? end.toLocaleString() : "EN CURSO"}
-                    </div>
-                    <div className="text-sm text-gray-600">Duración: {dur}</div>
-                  </div>
-
-                  <span className="text-sm text-gray-400">
-                    Detalle por turno: usar panel Admin → Fichajes
-                  </span>
-                </div>
-              );
-            })}
-
-            {shifts.length === 0 && <p className="text-gray-500">Aún no hay turnos.</p>}
-          </div>
-        )}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <StatCard title="Empresa" value={companyId ? "Vinculada" : "—"} />
+        <StatCard title="En curso" value={String(countInCourse)} tone="info" />
+        <StatCard title="Mostrados" value={String(shifts.length)} />
       </div>
-    </main>
+
+      {loading ? (
+        <p className="text-sm text-[var(--text-secondary)]">Cargando…</p>
+      ) : shifts.length === 0 ? (
+        <EmptyState title="Sin turnos" description="Aún no hay turnos registrados." />
+      ) : (
+        <div className="space-y-3">
+          {shifts.map((s) => {
+            const start = new Date(s.started_at);
+            const end = s.ended_at ? new Date(s.ended_at) : null;
+            const dur = end ? msToHHMM(end.getTime() - start.getTime()) : "—";
+            const who = nameByUser[s.user_id] || s.user_id.slice(0, 8);
+
+            return (
+              <Card key={s.id}>
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="font-medium text-[var(--text)]">{who}</div>
+                    <div className="mt-1 text-sm text-[var(--text-secondary)]">
+                      {start.toLocaleString("es-ES")} →{" "}
+                      {end ? end.toLocaleString("es-ES") : "En curso"}
+                    </div>
+                    <div className="mt-1 text-sm text-[var(--text-muted)]">Duración: {dur}</div>
+                  </div>
+                  {end ? (
+                    <Badge tone="neutral">Cerrado</Badge>
+                  ) : (
+                    <Badge tone="info">En curso</Badge>
+                  )}
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }

@@ -3,8 +3,19 @@ export const dynamic = "force-dynamic";
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { RefreshCw } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { canAccessAdminZone } from "@/lib/authz";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { Card, StatCard } from "@/components/ui/Card";
+import { EmptyState, ErrorState } from "@/components/ui/EmptyState";
+import { FormField } from "@/components/ui/FormField";
+import { Input, Select } from "@/components/ui/Input";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { PageSkeleton } from "@/components/ui/Skeleton";
+import { useToast } from "@/components/ui/Toast";
+import { userFacingError } from "@/lib/userFacingError";
 
 type Row = {
   planned_shift_id: string;
@@ -41,33 +52,40 @@ function statusLabel(status: string) {
   return status.replaceAll("_", " ");
 }
 
-function badgeColor(status: string) {
+function statusTone(
+  status: string
+): "success" | "warning" | "danger" | "info" | "neutral" | "accent" {
   switch (status) {
     case "OK":
-      return "bg-green-500/20 text-green-300 border-green-500/30";
+      return "success";
     case "TARDE":
-      return "bg-yellow-500/20 text-yellow-200 border-yellow-500/30";
+      return "warning";
     case "ENTRADA_ANTICIPADA":
-      return "bg-blue-500/20 text-blue-200 border-blue-500/30";
     case "HORAS_EXTRA":
-      return "bg-blue-500/20 text-blue-200 border-blue-500/30";
+      return "info";
     case "ABIERTO":
-      return "bg-orange-500/20 text-orange-200 border-orange-500/30";
     case "TURNO_INCOMPLETO":
-      return "bg-orange-500/20 text-orange-200 border-orange-500/30";
-    case "NO_FICHAJE":
-      return "bg-red-500/20 text-red-200 border-red-500/30";
     case "SALIDA_ANTICIPADA":
-      return "bg-orange-500/20 text-orange-200 border-orange-500/30";
+      return "warning";
+    case "NO_FICHAJE":
     case "FUERA_DE_TURNO":
-      return "bg-red-500/20 text-red-200 border-red-500/30";
+      return "danger";
     default:
-      return "bg-white/10 text-white border-white/10";
+      return "neutral";
   }
+}
+
+function formatTime(iso: string | null) {
+  if (!iso) return "--:--";
+  return new Date(iso).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 export default function PlannedVsRealPage() {
   const router = useRouter();
+  const { error: toastError } = useToast();
   const [loading, setLoading] = useState(true);
   const [rows, setRows] = useState<Row[]>([]);
   const [workers, setWorkers] = useState<Worker[]>([]);
@@ -150,7 +168,9 @@ export default function PlannedVsRealPage() {
         })
       );
     } catch (e: unknown) {
-      setErrorMsg(e instanceof Error ? e.message : "Error");
+      const msg = userFacingError(e);
+      setErrorMsg(msg);
+      toastError(msg);
     } finally {
       setLoading(false);
     }
@@ -176,220 +196,195 @@ export default function PlannedVsRealPage() {
     };
   }, [rows]);
 
+  const renderDetail = (r: Row) => (
+    <>
+      {r.late_minutes !== null && r.late_minutes > 0 && (
+        <div className="text-sm text-[var(--warning)]">Retraso: {r.late_minutes} min</div>
+      )}
+      {r.early_entry_minutes !== null && r.early_entry_minutes > 0 && (
+        <div className="text-sm text-[var(--info)]">
+          Entrada anticipada: {r.early_entry_minutes} min
+        </div>
+      )}
+      {r.early_leave_minutes !== null && r.early_leave_minutes > 0 && (
+        <div className="text-sm text-[var(--warning)]">
+          Salida anticipada: {r.early_leave_minutes} min
+        </div>
+      )}
+      {r.extra_minutes !== null && r.extra_minutes > 0 && (
+        <div className="text-sm text-[var(--info)]">
+          Tiempo adicional: {r.extra_minutes} min
+        </div>
+      )}
+    </>
+  );
+
+  if (loading && rows.length === 0 && !errorMsg) {
+    return <PageSkeleton />;
+  }
+
   return (
-    <div className="mx-auto max-w-7xl">
-      <div className="max-w-7xl mx-auto">
-        <div className="rounded-2xl border border-white/10 bg-white/[0.06] p-8">
-          <div className="flex items-center justify-between gap-4 flex-wrap mb-8">
-            <div>
-              <div className="text-white/60 text-xs">Fichagest · Control avanzado</div>
+    <div className="mx-auto max-w-7xl space-y-6">
+      <PageHeader
+        title="Planificado vs real"
+        description="Comparación entre turnos planificados y fichajes reales"
+        actions={
+          <Button variant="secondary" size="sm" onClick={load} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            Recargar
+          </Button>
+        }
+      />
 
-              <h1 className="text-3xl font-bold text-white mt-1">Comparador de turnos</h1>
+      {errorMsg ? <ErrorState message={errorMsg} onRetry={load} /> : null}
 
-              <p className="text-white/60 mt-1">
-                Comparación automática entre turnos planificados y fichajes reales.
-              </p>
-            </div>
+      <Card>
+        <h2 className="mb-4 text-sm font-semibold text-[var(--text)]">Filtros</h2>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5 lg:items-end">
+          <FormField label="Desde" htmlFor="pv-from">
+            <Input
+              id="pv-from"
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+            />
+          </FormField>
+          <FormField label="Hasta" htmlFor="pv-to">
+            <Input
+              id="pv-to"
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+            />
+          </FormField>
+          <FormField label="Trabajador" htmlFor="pv-user">
+            <Select
+              id="pv-user"
+              value={selectedUserId}
+              onChange={(e) => setSelectedUserId(e.target.value)}
+            >
+              <option value="">Todos</option>
+              {workers.map((w) => (
+                <option key={w.user_id} value={w.user_id}>
+                  {w.full_name || w.user_id.slice(0, 8)}
+                </option>
+              ))}
+            </Select>
+          </FormField>
+          <FormField label="Estado" htmlFor="pv-status">
+            <Select
+              id="pv-status"
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value)}
+            >
+              <option value="">Todos</option>
+              <option value="OK">OK</option>
+              <option value="TARDE">Retraso</option>
+              <option value="ENTRADA_ANTICIPADA">Entrada anticipada</option>
+              <option value="ABIERTO">En curso</option>
+              <option value="TURNO_INCOMPLETO">Turno incompleto</option>
+              <option value="NO_FICHAJE">Sin fichaje</option>
+              <option value="SALIDA_ANTICIPADA">Salida anticipada</option>
+              <option value="FUERA_DE_TURNO">Fuera de turno</option>
+              <option value="HORAS_EXTRA">Tiempo adicional</option>
+            </Select>
+          </FormField>
+          <Button
+            variant="primary"
+            onClick={load}
+            disabled={loading || !dateFrom || !dateTo}
+          >
+            Aplicar
+          </Button>
+        </div>
+      </Card>
 
-            <div className="flex gap-3">
-              <button
-                onClick={load}
-                className="rounded-xl border border-white/10 bg-white/[0.06] px-4 py-2 text-sm text-white"
-              >
-                Recargar
-              </button>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard title="Total" value={String(summary.total)} />
+        <StatCard title="Incidencias" value={String(summary.incidences)} tone="warning" />
+        <StatCard title="Sin fichaje" value={String(summary.noClock)} tone="danger" />
+        <StatCard title="Retrasos" value={String(summary.late)} tone="warning" />
+      </div>
 
-              <a
-                href="/admin/planned-shifts"
-                className="rounded-xl border border-white/10 bg-white/[0.06] px-4 py-2 text-sm text-white"
-              >
-                Planificación
-              </a>
-            </div>
-          </div>
+      {loading ? (
+        <p className="text-sm text-[var(--text-secondary)]">Cargando…</p>
+      ) : rows.length === 0 ? (
+        <EmptyState
+          title="Sin resultados"
+          description="No hay datos con estos filtros."
+        />
+      ) : (
+        <>
+          {/* Desktop table */}
+          <Card className="hidden overflow-x-auto md:block" padding={false}>
+            <table className="w-full min-w-[720px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-[var(--border)] text-xs text-[var(--text-muted)]">
+                  <th className="px-5 py-3 font-medium">Trabajador</th>
+                  <th className="px-5 py-3 font-medium">Fecha</th>
+                  <th className="px-5 py-3 font-medium">Planificado</th>
+                  <th className="px-5 py-3 font-medium">Real</th>
+                  <th className="px-5 py-3 font-medium">Detalle</th>
+                  <th className="px-5 py-3 font-medium">Estado</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr
+                    key={r.planned_shift_id}
+                    className="border-b border-[var(--border)] last:border-0"
+                  >
+                    <td className="px-5 py-3 font-medium text-[var(--text)]">
+                      {workerName(r.user_id)}
+                    </td>
+                    <td className="px-5 py-3 text-[var(--text-secondary)]">{r.planned_date}</td>
+                    <td className="px-5 py-3 text-[var(--text-secondary)]">
+                      {r.planned_start.slice(0, 5)} – {r.planned_end.slice(0, 5)}
+                    </td>
+                    <td className="px-5 py-3 text-[var(--text-secondary)]">
+                      {formatTime(r.started_at)} – {formatTime(r.ended_at)}
+                    </td>
+                    <td className="px-5 py-3 space-y-0.5">{renderDetail(r)}</td>
+                    <td className="px-5 py-3">
+                      <Badge tone={statusTone(r.status)}>{statusLabel(r.status)}</Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
 
-          {errorMsg && (
-            <div className="mb-6 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-red-100">
-              {errorMsg}
-            </div>
-          )}
-
-          <div className="rounded-2xl border border-white/10 bg-black/20 p-5 mb-6">
-            <div className="font-bold text-white mb-4">Filtros</div>
-
-            <div className="flex gap-3 flex-wrap items-end">
-              <div>
-                <div className="text-xs text-white/60 mb-1">Desde</div>
-                <input
-                  type="date"
-                  className="border border-white/10 rounded-xl px-3 py-2 text-sm bg-white/[0.04] text-white"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                />
-              </div>
-
-              <div>
-                <div className="text-xs text-white/60 mb-1">Hasta</div>
-                <input
-                  type="date"
-                  className="border border-white/10 rounded-xl px-3 py-2 text-sm bg-white/[0.04] text-white"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                />
-              </div>
-
-              <div>
-                <div className="text-xs text-white/60 mb-1">Trabajador</div>
-                <select
-                  className="border border-white/10 rounded-xl px-3 py-2 text-sm min-w-[220px] bg-white/[0.04] text-white"
-                  value={selectedUserId}
-                  onChange={(e) => setSelectedUserId(e.target.value)}
-                >
-                  <option value="">Todos</option>
-                  {workers.map((w) => (
-                    <option key={w.user_id} value={w.user_id}>
-                      {w.full_name || w.user_id.slice(0, 8)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <div className="text-xs text-white/60 mb-1">Estado</div>
-                <select
-                  className="border border-white/10 rounded-xl px-3 py-2 text-sm min-w-[220px] bg-white/[0.04] text-white"
-                  value={selectedStatus}
-                  onChange={(e) => setSelectedStatus(e.target.value)}
-                >
-                  <option value="">Todos</option>
-                  <option value="OK">OK</option>
-                  <option value="TARDE">Retraso</option>
-                  <option value="ENTRADA_ANTICIPADA">Entrada anticipada</option>
-                  <option value="ABIERTO">En curso</option>
-                  <option value="TURNO_INCOMPLETO">Turno incompleto</option>
-                  <option value="NO_FICHAJE">Sin fichaje</option>
-                  <option value="SALIDA_ANTICIPADA">Salida anticipada</option>
-                  <option value="FUERA_DE_TURNO">Fuera de turno</option>
-                  <option value="HORAS_EXTRA">Tiempo adicional</option>
-                </select>
-              </div>
-
-              <button
-                className="rounded-xl bg-white text-black px-4 py-2 text-sm font-medium"
-                onClick={load}
-                disabled={loading || !dateFrom || !dateTo}
-              >
-                Aplicar
-              </button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-6">
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-              <div className="text-white/60 text-xs">Total</div>
-              <div className="text-white text-2xl font-bold mt-1">{summary.total}</div>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-              <div className="text-white/60 text-xs">Incidencias</div>
-              <div className="text-white text-2xl font-bold mt-1">{summary.incidences}</div>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-              <div className="text-white/60 text-xs">Sin fichaje</div>
-              <div className="text-red-100 text-2xl font-bold mt-1">{summary.noClock}</div>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-black/20 p-4">
-              <div className="text-white/60 text-xs">Retrasos</div>
-              <div className="text-yellow-100 text-2xl font-bold mt-1">{summary.late}</div>
-            </div>
-          </div>
-
-          {loading ? (
-            <div className="text-white/70">Cargando...</div>
-          ) : rows.length === 0 ? (
-            <div className="text-white/50">No hay datos con estos filtros.</div>
-          ) : (
-            <div className="space-y-3">
-              {rows.map((r) => (
-                <div
-                  key={r.planned_shift_id}
-                  className="rounded-2xl border border-white/10 bg-black/20 p-5"
-                >
-                  <div className="flex items-start justify-between gap-4 flex-wrap">
-                    <div>
-                      <div className="text-white font-semibold">{workerName(r.user_id)}</div>
-
-                      <div className="text-white/60 text-sm mt-1">{r.planned_date}</div>
-
-                      <div className="text-white/80 text-sm mt-3">
-                        Planificado:{" "}
-                        <b>
-                          {r.planned_start.slice(0, 5)} - {r.planned_end.slice(0, 5)}
-                        </b>
-                      </div>
-
-                      <div className="text-white/80 text-sm mt-1">
-                        Real:{" "}
-                        <b>
-                          {r.started_at
-                            ? new Date(r.started_at).toLocaleTimeString([], {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })
-                            : "--:--"}
-                          {" - "}
-                          {r.ended_at
-                            ? new Date(r.ended_at).toLocaleTimeString([], {
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })
-                            : "--:--"}
-                        </b>
-                      </div>
-
-                      {r.late_minutes !== null && r.late_minutes > 0 && (
-                        <div className="text-yellow-200 text-sm mt-2">
-                          Retraso: {r.late_minutes} min
-                        </div>
-                      )}
-
-                      {r.early_entry_minutes !== null && r.early_entry_minutes > 0 && (
-                        <div className="text-blue-200 text-sm mt-1">
-                          Entrada anticipada: {r.early_entry_minutes} min
-                        </div>
-                      )}
-
-                      {r.early_leave_minutes !== null && r.early_leave_minutes > 0 && (
-                        <div className="text-orange-200 text-sm mt-1">
-                          Salida anticipada: {r.early_leave_minutes} min
-                        </div>
-                      )}
-
-                      {r.extra_minutes !== null && r.extra_minutes > 0 && (
-                        <div className="text-blue-200 text-sm mt-1">
-                          Tiempo adicional: {r.extra_minutes} min
-                        </div>
-                      )}
-                    </div>
-
-                    <div>
-                      <div
-                        className={`px-3 py-1 rounded-full border text-sm font-medium ${badgeColor(
-                          r.status
-                        )}`}
-                      >
-                        {statusLabel(r.status)}
-                      </div>
-                    </div>
+          {/* Mobile cards */}
+          <div className="space-y-3 md:hidden">
+            {rows.map((r) => (
+              <Card key={r.planned_shift_id}>
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="font-medium text-[var(--text)]">{workerName(r.user_id)}</div>
+                    <div className="mt-1 text-sm text-[var(--text-muted)]">{r.planned_date}</div>
+                  </div>
+                  <Badge tone={statusTone(r.status)}>{statusLabel(r.status)}</Badge>
+                </div>
+                <div className="mt-3 space-y-1 text-sm text-[var(--text-secondary)]">
+                  <div>
+                    Planificado:{" "}
+                    <span className="text-[var(--text)]">
+                      {r.planned_start.slice(0, 5)} – {r.planned_end.slice(0, 5)}
+                    </span>
+                  </div>
+                  <div>
+                    Real:{" "}
+                    <span className="text-[var(--text)]">
+                      {formatTime(r.started_at)} – {formatTime(r.ended_at)}
+                    </span>
                   </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
+                <div className="mt-2 space-y-0.5">{renderDetail(r)}</div>
+              </Card>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }

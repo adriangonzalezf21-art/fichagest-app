@@ -6,10 +6,17 @@ import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
 import { getMyCompanyAccess } from "@/lib/companyAccess";
 import CompanyBlocked from "@/components/CompanyBlocked";
+import { Card } from "@/components/ui/Card";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { EmptyState } from "@/components/ui/EmptyState";
+import { PageSkeleton } from "@/components/ui/Skeleton";
+import { useToast } from "@/components/ui/Toast";
+import { userFacingError } from "@/lib/userFacingError";
+import { Coffee, LogIn, LogOut, Play, Clock3 } from "lucide-react";
 
 type EntryType = "IN" | "BREAK_START" | "BREAK_END" | "OUT";
 type Entry = { id: string; entry_type: EntryType; ts: string; shift_id: string };
-
 type Status = "OFF" | "ON" | "BREAK";
 
 function formatHHMMSS(totalSeconds: number) {
@@ -23,48 +30,36 @@ function formatHHMMSS(totalSeconds: number) {
 function computeTotals(entriesAsc: { entry_type: string; ts: string }[], now: Date) {
   let workSeconds = 0;
   let breakSeconds = 0;
-
   let inAt: Date | null = null;
   let breakAt: Date | null = null;
 
   for (const e of entriesAsc) {
     const t = new Date(e.ts);
-
     if (e.entry_type === "IN") {
       inAt = t;
       breakAt = null;
     }
-
-    if (e.entry_type === "BREAK_START" && inAt) {
-      breakAt = t;
-    }
-
+    if (e.entry_type === "BREAK_START" && inAt) breakAt = t;
     if (e.entry_type === "BREAK_END" && inAt && breakAt) {
       breakSeconds += (t.getTime() - breakAt.getTime()) / 1000;
       breakAt = null;
     }
-
     if (e.entry_type === "OUT" && inAt) {
       workSeconds += (t.getTime() - inAt.getTime()) / 1000;
-
       if (breakAt) {
         breakSeconds += (t.getTime() - breakAt.getTime()) / 1000;
         breakAt = null;
       }
-
       inAt = null;
     }
   }
 
   if (inAt) {
     workSeconds += (now.getTime() - inAt.getTime()) / 1000;
-    if (breakAt) {
-      breakSeconds += (now.getTime() - breakAt.getTime()) / 1000;
-    }
+    if (breakAt) breakSeconds += (now.getTime() - breakAt.getTime()) / 1000;
   }
 
   const netSeconds = Math.max(0, workSeconds - breakSeconds);
-
   return {
     workSeconds: Math.floor(workSeconds),
     breakSeconds: Math.floor(breakSeconds),
@@ -93,54 +88,48 @@ function entryTypeLabel(type: EntryType) {
   }
 }
 
-function entryTypeSubLabel(type: EntryType) {
-  switch (type) {
-    case "IN":
-      return "Inicio de jornada";
-    case "BREAK_START":
-      return "Descanso iniciado";
-    case "BREAK_END":
-      return "Descanso finalizado";
-    case "OUT":
-      return "Jornada finalizada";
-    default:
-      return "Movimiento registrado";
-  }
+function formatClock(d: Date) {
+  return d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatLongDate(d: Date) {
+  const s = d.toLocaleDateString("es-ES", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 export default function ClockPage() {
   const router = useRouter();
+  const { success, error: toastError } = useToast();
 
   const [loading, setLoading] = useState(false);
+  const [booting, setBooting] = useState(true);
   const [blocked, setBlocked] = useState(false);
   const opInFlight = useRef(false);
 
   const [activeShiftId, setActiveShiftId] = useState<string | null>(null);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [lastType, setLastType] = useState<EntryType | undefined>(undefined);
-
-  const [userActive, setUserActive] = useState<boolean>(true);
-  const [activeChecked, setActiveChecked] = useState<boolean>(false);
-
-  const [nowTick, setNowTick] = useState<Date>(new Date());
-
-  // NOTA SEGURIDAD: la atomicidad real (un solo turno abierto, OUT sin IN, etc.)
-  // requiere constraints/RPC en base de datos + RLS. Esto solo reduce abusos desde la UI.
+  const [userActive, setUserActive] = useState(true);
+  const [activeChecked, setActiveChecked] = useState(false);
+  const [nowTick, setNowTick] = useState(new Date());
 
   useEffect(() => {
-    if (!activeShiftId) return;
     const id = setInterval(() => setNowTick(new Date()), 1000);
     return () => clearInterval(id);
-  }, [activeShiftId]);
+  }, []);
 
   const status = useMemo(() => statusFromLast(lastType), [lastType]);
 
-  const statusLabel = useMemo(() => {
-    if (!activeChecked) return "Cargando...";
-    if (!userActive) return "Cuenta desactivada";
-    if (status === "OFF") return "Fuera de turno";
-    if (status === "ON") return "Turno en curso";
-    return "En descanso";
+  const statusMeta = useMemo(() => {
+    if (!activeChecked) return { label: "Cargando…", tone: "neutral" as const };
+    if (!userActive) return { label: "Cuenta desactivada", tone: "danger" as const };
+    if (status === "OFF") return { label: "Jornada no iniciada", tone: "neutral" as const };
+    if (status === "ON") return { label: "Trabajando", tone: "success" as const };
+    return { label: "En pausa", tone: "warning" as const };
   }, [status, userActive, activeChecked]);
 
   const totals = useMemo(() => {
@@ -148,16 +137,23 @@ export default function ClockPage() {
     return computeTotals(asc, nowTick);
   }, [entries, nowTick]);
 
+  const entryTime = useMemo(() => {
+    const asc = [...entries].reverse();
+    const firstIn = asc.find((e) => e.entry_type === "IN");
+    return firstIn ? new Date(firstIn.ts) : null;
+  }, [entries]);
+
+  const notifyErr = (err: unknown) => {
+    toastError(userFacingError(err));
+  };
+
   const ensureActive = async (): Promise<boolean> => {
     const access = await getMyCompanyAccess();
-
     if (!access.session) return false;
-
     if (access.blocked) {
       setBlocked(true);
       return false;
     }
-
     setBlocked(false);
 
     const { data: prof, error } = await supabase
@@ -167,25 +163,22 @@ export default function ClockPage() {
       .maybeSingle<{ active: boolean | null }>();
 
     if (error) {
-      alert(error.message);
+      notifyErr(error);
       return false;
     }
 
     const isActive = prof?.active !== false;
     setUserActive(isActive);
     setActiveChecked(true);
-
     return isActive;
   };
 
   const loadState = async () => {
     const access = await getMyCompanyAccess();
-
     if (!access.session) {
       router.push("/login?next=/clock");
       return;
     }
-
     if (access.blocked) {
       setBlocked(true);
       setActiveShiftId(null);
@@ -195,7 +188,6 @@ export default function ClockPage() {
       setActiveChecked(true);
       return;
     }
-
     setBlocked(false);
 
     const ok = await ensureActive();
@@ -208,7 +200,6 @@ export default function ClockPage() {
     }
 
     const uid = access.session.user.id;
-
     const { data: shifts, error: shiftErr } = await supabase
       .from("shifts")
       .select("id")
@@ -218,7 +209,7 @@ export default function ClockPage() {
       .limit(1);
 
     if (shiftErr) {
-      alert(shiftErr.message);
+      notifyErr(shiftErr);
       return;
     }
 
@@ -233,7 +224,7 @@ export default function ClockPage() {
         .order("ts", { ascending: false });
 
       if (teErr) {
-        alert(teErr.message);
+        notifyErr(teErr);
         return;
       }
 
@@ -251,21 +242,19 @@ export default function ClockPage() {
   useEffect(() => {
     const init = async () => {
       const access = await getMyCompanyAccess();
-
       if (!access.session) {
         router.push("/login?next=/clock");
         return;
       }
-
       if (access.blocked) {
         setBlocked(true);
         setActiveChecked(true);
+        setBooting(false);
         return;
       }
-
       await loadState();
+      setBooting(false);
     };
-
     init();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [router]);
@@ -274,12 +263,10 @@ export default function ClockPage() {
     if (opInFlight.current || loading) return;
     opInFlight.current = true;
     setLoading(true);
-
     try {
       const ok = await ensureActive();
       if (!ok) return;
 
-      // user_id siempre desde Auth — nunca desde formulario/URL/localStorage.
       const { data: userData } = await supabase.auth.getUser();
       const uid = userData.user?.id;
       if (!uid) {
@@ -287,7 +274,6 @@ export default function ClockPage() {
         return;
       }
 
-      // Reconsultar estado: no permitir IN si ya hay turno abierto (defense-in-depth).
       const { data: openShifts, error: openErr } = await supabase
         .from("shifts")
         .select("id")
@@ -296,23 +282,19 @@ export default function ClockPage() {
         .limit(1);
 
       if (openErr) {
-        alert(openErr.message);
+        notifyErr(openErr);
         return;
       }
-
       if (openShifts && openShifts.length > 0) {
-        alert("Ya tienes un turno abierto. No se puede fichar otra entrada.");
+        toastError("Ya tienes un turno abierto. No se puede fichar otra entrada.");
         await loadState();
         return;
       }
-
       if (status !== "OFF") {
-        alert("Acción no permitida según tu estado actual.");
+        toastError("Acción no permitida según tu estado actual.");
         return;
       }
 
-      // No enviamos company_id ni timestamps editables desde el cliente.
-      // started_at / ts deben resolverse en DB (default now()) cuando exista.
       const { data: shiftRows, error: shiftErr } = await supabase
         .from("shifts")
         .insert({ user_id: uid })
@@ -320,13 +302,13 @@ export default function ClockPage() {
         .limit(1);
 
       if (shiftErr) {
-        alert(shiftErr.message);
+        notifyErr(shiftErr);
         return;
       }
 
       const shiftId = shiftRows?.[0]?.id;
       if (!shiftId) {
-        alert("No se pudo crear el turno.");
+        toastError("No se pudo crear el turno.");
         return;
       }
 
@@ -337,11 +319,12 @@ export default function ClockPage() {
       });
 
       if (teErr) {
-        alert(teErr.message);
+        notifyErr(teErr);
         return;
       }
 
       await loadState();
+      success(`Entrada registrada a las ${formatClock(new Date())}`);
     } finally {
       setLoading(false);
       opInFlight.current = false;
@@ -352,7 +335,6 @@ export default function ClockPage() {
     if (opInFlight.current || loading) return;
     opInFlight.current = true;
     setLoading(true);
-
     try {
       const ok = await ensureActive();
       if (!ok) return;
@@ -364,7 +346,6 @@ export default function ClockPage() {
         return;
       }
 
-      // Releer turno abierto del propio usuario (no confiar solo en state local).
       const { data: openShifts, error: openErr } = await supabase
         .from("shifts")
         .select("id")
@@ -374,13 +355,13 @@ export default function ClockPage() {
         .limit(1);
 
       if (openErr) {
-        alert(openErr.message);
+        notifyErr(openErr);
         return;
       }
 
       const currentShiftId = openShifts?.[0]?.id ?? null;
       if (!currentShiftId) {
-        alert("No hay turno activo. Primero marca Entrada.");
+        toastError("No hay turno activo. Primero marca Entrada.");
         await loadState();
         return;
       }
@@ -394,13 +375,12 @@ export default function ClockPage() {
         .limit(1);
 
       if (teLoadErr) {
-        alert(teLoadErr.message);
+        notifyErr(teLoadErr);
         return;
       }
 
       const last = (te?.[0]?.entry_type as EntryType | undefined) ?? undefined;
       const currentStatus = statusFromLast(last);
-
       const allowed: readonly Exclude<EntryType, "IN">[] =
         currentStatus === "ON"
           ? ["BREAK_START", "OUT"]
@@ -409,7 +389,7 @@ export default function ClockPage() {
             : [];
 
       if (!allowed.includes(type)) {
-        alert("Acción no permitida según tu estado actual.");
+        toastError("Acción no permitida según tu estado actual.");
         await loadState();
         return;
       }
@@ -421,13 +401,11 @@ export default function ClockPage() {
       });
 
       if (teErr) {
-        alert(teErr.message);
+        notifyErr(teErr);
         return;
       }
 
       if (type === "OUT") {
-        // Cerrar solo el turno abierto del usuario autenticado.
-        // Idealmente ended_at = now() en DB; aquí evitamos IDs ajenos.
         const { error: closeErr } = await supabase
           .from("shifts")
           .update({ ended_at: new Date().toISOString() })
@@ -436,12 +414,19 @@ export default function ClockPage() {
           .is("ended_at", null);
 
         if (closeErr) {
-          alert(closeErr.message);
+          notifyErr(closeErr);
           return;
         }
       }
 
       await loadState();
+      const msg =
+        type === "BREAK_START"
+          ? `Pausa iniciada a las ${formatClock(new Date())}`
+          : type === "BREAK_END"
+            ? `Jornada reanudada a las ${formatClock(new Date())}`
+            : `Jornada finalizada a las ${formatClock(new Date())}`;
+      success(msg);
     } finally {
       setLoading(false);
       opInFlight.current = false;
@@ -450,121 +435,150 @@ export default function ClockPage() {
 
   const actionsDisabled = loading || !activeChecked || !userActive || blocked;
 
-  if (blocked) {
-    return <CompanyBlocked />;
-  }
+  if (blocked) return <CompanyBlocked />;
+  if (booting) return <PageSkeleton />;
+
+  const primaryAction =
+    status === "OFF"
+      ? {
+          label: "Entrar",
+          onClick: punchIn,
+          icon: LogIn,
+          variant: "accent" as const,
+        }
+      : status === "BREAK"
+        ? {
+            label: "Reanudar",
+            onClick: () => punch("BREAK_END"),
+            icon: Play,
+            variant: "accent" as const,
+          }
+        : {
+            label: "Finalizar jornada",
+            onClick: () => punch("OUT"),
+            icon: LogOut,
+            variant: "primary" as const,
+          };
+
+  const PrimaryIcon = primaryAction.icon;
+  const timeline = [...entries].reverse();
 
   return (
-    <div className="mx-auto max-w-5xl">
-      <div className="rounded-[var(--radius-xl)] border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[var(--shadow-md)] sm:p-8">
-        <div className="mb-6 flex items-start justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-[var(--text)] sm:text-3xl">Fichaje</h1>
-            <p className="mt-1 text-[var(--text-secondary)]">
-              Estado: <b className="text-[var(--text)]">{statusLabel}</b>
-            </p>
-            <p className="mt-1 text-sm text-[var(--text-muted)]">
-              Turno activo: <b className="text-[var(--text)]">{activeShiftId ? "Sí" : "No"}</b>
-            </p>
-          </div>
+    <div className="mx-auto max-w-3xl space-y-6">
+      {!userActive && activeChecked ? (
+        <div className="rounded-[var(--radius-lg)] border border-[var(--danger)]/30 bg-[var(--danger-soft)] px-4 py-3 text-sm text-[var(--danger)]">
+          Tu cuenta está desactivada. Contacta con tu administrador.
         </div>
+      ) : null}
 
-        {!userActive && activeChecked && (
-          <div className="mb-6 p-4 rounded-md border border-red-500/30 bg-red-500/10 text-red-100">
-            Tu cuenta está <b>desactivada</b>. Contacta con tu administrador.
+      <Card className="overflow-hidden text-center">
+        <div className="mx-auto max-w-md">
+          <div className="text-[3.5rem] font-semibold leading-none tracking-tight tabular-nums sm:text-6xl">
+            {formatClock(nowTick)}
           </div>
-        )}
+          <div className="mt-3 text-sm text-[var(--text-secondary)]">{formatLongDate(nowTick)}</div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
-          <div className="border border-white/10 rounded-xl p-4 bg-black/20">
-            <div className="text-sm text-white/60">Tiempo de turno</div>
-            <div className="text-2xl font-bold text-white">{formatHHMMSS(totals.workSeconds)}</div>
+          <div className="mt-5 flex items-center justify-center gap-2">
+            <span
+              className={`h-2.5 w-2.5 rounded-full ${
+                status === "ON"
+                  ? "bg-[var(--success)]"
+                  : status === "BREAK"
+                    ? "bg-[var(--warning)]"
+                    : "bg-[var(--text-muted)]"
+              }`}
+            />
+            <Badge tone={statusMeta.tone}>{statusMeta.label}</Badge>
           </div>
 
-          <div className="border border-white/10 rounded-xl p-4 bg-black/20">
-            <div className="text-sm text-white/60">Tiempo en descanso</div>
-            <div className="text-2xl font-bold text-white">{formatHHMMSS(totals.breakSeconds)}</div>
-          </div>
-
-          <div className="border border-white/10 rounded-xl p-4 bg-black/20">
-            <div className="text-sm text-white/60">Tiempo neto</div>
-            <div className="text-2xl font-bold text-white">{formatHHMMSS(totals.netSeconds)}</div>
-          </div>
-        </div>
-
-        <div className="flex gap-3 mb-8 flex-wrap">
-          <button
-            onClick={punchIn}
-            disabled={actionsDisabled || status !== "OFF"}
-            className="rounded-xl bg-white text-black py-3 px-4 font-medium disabled:opacity-40"
-          >
-            Entrada
-          </button>
-
-          <button
-            onClick={() => punch("BREAK_START")}
-            disabled={actionsDisabled || status !== "ON"}
-            className="rounded-xl border border-white/10 py-3 px-4 text-white disabled:opacity-40"
-          >
-            Iniciar descanso
-          </button>
-
-          <button
-            onClick={() => punch("BREAK_END")}
-            disabled={actionsDisabled || status !== "BREAK"}
-            className="rounded-xl border border-white/10 py-3 px-4 text-white disabled:opacity-40"
-          >
-            Finalizar descanso
-          </button>
-
-          <button
-            onClick={() => punch("OUT")}
-            disabled={actionsDisabled || status !== "ON"}
-            className="rounded-xl border border-white/10 py-3 px-4 text-white disabled:opacity-40"
-          >
-            Salida
-          </button>
-        </div>
-
-        <h2 className="text-xl font-bold mb-3 text-white">
-          {activeShiftId ? "Movimientos del turno actual" : "Movimientos"}
-        </h2>
-
-        <div className="space-y-2">
-          {entries.map((e) => (
-            <div
-              key={e.id}
-              className="flex justify-between items-center gap-4 border border-white/10 rounded-xl p-4 bg-black/20 text-white"
+          <div className="mt-8 space-y-3">
+            <Button
+              variant={primaryAction.variant}
+              size="xl"
+              className="w-full min-h-[3.5rem] text-base"
+              onClick={primaryAction.onClick}
+              disabled={actionsDisabled}
+              loading={loading}
             >
-              <div>
-                <div className="font-semibold text-white">{entryTypeLabel(e.entry_type)}</div>
-                <div className="text-xs text-white/50 mt-1">
-                  {entryTypeSubLabel(e.entry_type)}
-                </div>
-              </div>
+              <PrimaryIcon className="h-5 w-5" />
+              {primaryAction.label}
+            </Button>
 
-              <div className="text-right">
-                <div className="text-sm text-white">
-                  {new Date(e.ts).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </div>
-
-                <div className="text-xs text-white/50 mt-1">
-                  {new Date(e.ts).toLocaleDateString()}
-                </div>
-              </div>
-            </div>
-          ))}
-
-          {entries.length === 0 && (
-            <p className="text-white/50">
-              {activeShiftId ? "Todavía no hay movimientos en este turno." : "No hay turno activo."}
-            </p>
-          )}
+            {status === "ON" ? (
+              <Button
+                variant="secondary"
+                size="lg"
+                className="w-full"
+                onClick={() => punch("BREAK_START")}
+                disabled={actionsDisabled}
+                loading={loading}
+              >
+                <Coffee className="h-4 w-4" />
+                Iniciar pausa
+              </Button>
+            ) : null}
+          </div>
         </div>
+      </Card>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <Card className="!p-4">
+          <div className="text-[11px] text-[var(--text-muted)]">Entrada</div>
+          <div className="mt-1 text-lg font-semibold tabular-nums">
+            {entryTime ? formatClock(entryTime) : "—"}
+          </div>
+        </Card>
+        <Card className="!p-4">
+          <div className="text-[11px] text-[var(--text-muted)]">Trabajado</div>
+          <div className="mt-1 text-lg font-semibold tabular-nums text-[var(--success)]">
+            {formatHHMMSS(totals.netSeconds)}
+          </div>
+        </Card>
+        <Card className="!p-4">
+          <div className="text-[11px] text-[var(--text-muted)]">En pausa</div>
+          <div className="mt-1 text-lg font-semibold tabular-nums text-[var(--warning)]">
+            {formatHHMMSS(totals.breakSeconds)}
+          </div>
+        </Card>
+        <Card className="!p-4">
+          <div className="text-[11px] text-[var(--text-muted)]">Bruto</div>
+          <div className="mt-1 text-lg font-semibold tabular-nums">
+            {formatHHMMSS(totals.workSeconds)}
+          </div>
+        </Card>
       </div>
+
+      <Card>
+        <div className="mb-4 flex items-center gap-2">
+          <Clock3 className="h-4 w-4 text-[var(--text-muted)]" />
+          <h2 className="text-sm font-semibold">Timeline del día</h2>
+        </div>
+        {timeline.length === 0 ? (
+          <EmptyState
+            title="Sin movimientos todavía"
+            description="Cuando marques la entrada, verás aquí el historial de la jornada."
+          />
+        ) : (
+          <ol className="relative space-y-0 border-l border-[var(--border)] pl-5">
+            {timeline.map((e) => (
+              <li key={e.id} className="relative pb-5 last:pb-0">
+                <span className="absolute -left-[1.4rem] top-1.5 h-2.5 w-2.5 rounded-full bg-[var(--accent)]" />
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium">{entryTypeLabel(e.entry_type)}</div>
+                  </div>
+                  <div className="text-sm tabular-nums text-[var(--text-secondary)]">
+                    {new Date(e.ts).toLocaleTimeString("es-ES", {
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}
+                  </div>
+                </div>
+              </li>
+            ))}
+          </ol>
+        )}
+      </Card>
     </div>
   );
 }

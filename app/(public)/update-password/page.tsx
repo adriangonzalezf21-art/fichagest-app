@@ -2,12 +2,19 @@
 export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
 import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
 import { validatePassword, MIN_PASSWORD_LENGTH } from "@/lib/passwordPolicy";
+import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
+import { FormField } from "@/components/ui/FormField";
+import { Input } from "@/components/ui/Input";
+import { useToast } from "@/components/ui/Toast";
+import { userFacingError } from "@/lib/userFacingError";
 
 export default function UpdatePasswordPage() {
   const router = useRouter();
+  const { success, error: toastError } = useToast();
 
   const [password, setPassword] = useState("");
   const [password2, setPassword2] = useState("");
@@ -113,64 +120,96 @@ export default function UpdatePasswordPage() {
       });
 
       if (error) {
-        setError(error.message);
+        const message = userFacingError(error);
+        setError(message);
+        toastError(message);
         return;
       }
 
-      setMsg("Contraseña actualizada correctamente. Redirigiendo al login...");
+      const ok = "Contraseña actualizada correctamente. Redirigiendo al login…";
+      setMsg(ok);
+      success(ok);
 
       setTimeout(async () => {
         await supabase.auth.signOut();
         router.push("/login");
       }, 1500);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "Error inesperado.");
+      const message = userFacingError(e);
+      setError(message);
+      toastError(message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <main className="min-h-screen bg-[#0B0F17] flex items-center justify-center text-white p-6">
-      <div className="w-full max-w-md rounded-2xl border border-white/10 bg-white/[0.05] p-8">
-        <h1 className="text-2xl font-bold mb-6">Nueva contraseña</h1>
+    <main className="flex min-h-screen items-center justify-center p-6">
+      <div className="w-full max-w-md">
+        <div className="mb-6 text-center">
+          <h1 className="text-2xl font-semibold tracking-tight text-[var(--text)]">
+            Nueva contraseña
+          </h1>
+          <p className="mt-1.5 text-sm text-[var(--text-secondary)]">
+            Elige una contraseña segura para tu cuenta
+          </p>
+        </div>
 
-        {checking ? (
-          <p className="text-white/70">Validando enlace...</p>
-        ) : (
-          <>
-            {msg && <div className="mb-4 text-green-400">{msg}</div>}
-            {error && <div className="mb-4 text-red-400">{error}</div>}
+        <Card>
+          {checking ? (
+            <p className="text-sm text-[var(--text-secondary)]">Validando enlace…</p>
+          ) : (
+            <div className="space-y-4">
+              {msg ? (
+                <div className="rounded-[var(--radius-md)] border border-[var(--success)]/30 bg-[var(--success-soft)] p-3 text-sm text-[var(--success)]">
+                  {msg}
+                </div>
+              ) : null}
+              {error ? (
+                <div className="rounded-[var(--radius-md)] border border-[var(--danger)]/30 bg-[var(--danger-soft)] p-3 text-sm text-[var(--danger)]">
+                  {error}
+                </div>
+              ) : null}
 
-            {!msg && (
-              <>
-                <input
-                  type="password"
-                  placeholder={`Nueva contraseña (mín. ${MIN_PASSWORD_LENGTH})`}
-                  className="w-full mb-4 px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
+              {!msg ? (
+                <>
+                  <FormField label="Nueva contraseña" htmlFor="new-password">
+                    <Input
+                      id="new-password"
+                      type="password"
+                      placeholder={`Mínimo ${MIN_PASSWORD_LENGTH} caracteres`}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      disabled={loading}
+                      autoComplete="new-password"
+                    />
+                  </FormField>
 
-                <input
-                  type="password"
-                  placeholder="Repite la contraseña"
-                  className="w-full mb-4 px-4 py-3 rounded-xl bg-white/[0.04] border border-white/10"
-                  value={password2}
-                  onChange={(e) => setPassword2(e.target.value)}
-                />
+                  <FormField label="Repite la contraseña" htmlFor="new-password-2">
+                    <Input
+                      id="new-password-2"
+                      type="password"
+                      placeholder="Repite la contraseña"
+                      value={password2}
+                      onChange={(e) => setPassword2(e.target.value)}
+                      disabled={loading}
+                      autoComplete="new-password"
+                    />
+                  </FormField>
 
-                <button
-                  onClick={handleUpdate}
-                  disabled={loading}
-                  className="w-full bg-white text-black py-3 rounded-xl"
-                >
-                  {loading ? "Guardando..." : "Actualizar contraseña"}
-                </button>
-              </>
-            )}
-          </>
-        )}
+                  <Button
+                    variant="primary"
+                    className="w-full"
+                    onClick={handleUpdate}
+                    loading={loading}
+                  >
+                    Actualizar contraseña
+                  </Button>
+                </>
+              ) : null}
+            </div>
+          )}
+        </Card>
       </div>
     </main>
   );

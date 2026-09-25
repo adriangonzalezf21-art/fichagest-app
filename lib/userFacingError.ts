@@ -10,6 +10,9 @@ export function userFacingError(err: unknown, fallback = "Ha ocurrido un error. 
           : "";
 
   if (raw) {
+    if (/auth session missing/i.test(raw)) {
+      return "El enlace de recuperación no es válido o ha expirado.";
+    }
     // Keep short known messages; hide long PostgREST dumps.
     if (raw.length <= 120 && !/^(PGRST|JWT|postgres)/i.test(raw)) {
       return raw;

@@ -12,6 +12,9 @@ import { Input } from "@/components/ui/Input";
 import { useToast } from "@/components/ui/Toast";
 import { userFacingError } from "@/lib/userFacingError";
 
+/** Avoid double PKCE exchange under React Strict Mode remounts. */
+let recoveryExchangeStarted = false;
+
 export default function UpdatePasswordPage() {
   const router = useRouter();
   const { success, error: toastError } = useToast();
@@ -22,6 +25,7 @@ export default function UpdatePasswordPage() {
   const [checking, setChecking] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -29,14 +33,76 @@ export default function UpdatePasswordPage() {
     const prepareRecoverySession = async () => {
       setChecking(true);
       setError(null);
+      setReady(false);
 
       try {
-        // @supabase/ssr createBrowserClient enables detectSessionInUrl by default.
-        // It consumes ?code= (PKCE) during client init — do NOT call
-        // exchangeCodeForSession again (that caused a false "invalid/expired" error
-        // while the first exchange had already established a valid session).
-        //
-        // getSession() awaits client initialization, including URL detection.
+        // Await client init first — @supabase/ssr may already consume ?code= via
+        // detectSessionInUrl. Do not treat a later exchange failure as fatal if a
+        // session already exists (common with Strict Mode remounts).
+        const {
+          data: { session: initialSession },
+        } = await supabase.auth.getSession();
+
+        if (cancelled) return;
+
+        const url = new URL(window.location.href);
+        const code = url.searchParams.get("code");
+
+        if (code && !initialSession && !recoveryExchangeStarted) {
+          recoveryExchangeStarted = true;
+          const { error: exchangeError } =
+            await supabase.auth.exchangeCodeForSession(code);
+
+          if (cancelled) return;
+
+          if (exchangeError) {
+            const {
+              data: { session: afterExchange },
+            } = await supabase.auth.getSession();
+
+            if (!afterExchange) {
+              setError("El enlace de recuperación no es válido o ha expirado.");
+              setChecking(false);
+              return;
+            }
+          }
+
+          url.searchParams.delete("code");
+          window.history.replaceState({}, "", `${url.pathname}${url.search}`);
+        } else if (!initialSession) {
+          // Legacy / implicit email links: #access_token&refresh_token&type=recovery
+          const hash = window.location.hash.startsWith("#")
+            ? window.location.hash.slice(1)
+            : "";
+          const params = new URLSearchParams(hash);
+          const access_token = params.get("access_token");
+          const refresh_token = params.get("refresh_token");
+          const type = params.get("type");
+
+          if (type === "recovery" && access_token && refresh_token) {
+            const { error: sessionError } = await supabase.auth.setSession({
+              access_token,
+              refresh_token,
+            });
+
+            if (cancelled) return;
+
+            if (sessionError) {
+              const {
+                data: { session: afterSet },
+              } = await supabase.auth.getSession();
+
+              if (!afterSet) {
+                setError("El enlace de recuperación no es válido o ha expirado.");
+                setChecking(false);
+                return;
+              }
+            }
+
+            window.location.hash = "";
+          }
+        }
+
         const {
           data: { session },
         } = await supabase.auth.getSession();
@@ -45,19 +111,7 @@ export default function UpdatePasswordPage() {
 
         if (session) {
           setError(null);
-          setChecking(false);
-          return;
-        }
-
-        // Stronger check after init (validates JWT with Auth when possible).
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-
-        if (cancelled) return;
-
-        if (user) {
-          setError(null);
+          setReady(true);
           setChecking(false);
           return;
         }
@@ -96,6 +150,16 @@ export default function UpdatePasswordPage() {
 
       if (password !== password2) {
         setError("Las contraseñas no coinciden.");
+        return;
+      }
+
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        setError("El enlace de recuperación no es válido o ha expirado.");
+        setReady(false);
         return;
       }
 
@@ -155,7 +219,7 @@ export default function UpdatePasswordPage() {
                 </div>
               ) : null}
 
-              {!msg ? (
+              {!msg && ready ? (
                 <>
                   <FormField label="Nueva contraseña" htmlFor="new-password">
                     <Input

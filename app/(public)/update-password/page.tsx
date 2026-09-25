@@ -24,73 +24,57 @@ export default function UpdatePasswordPage() {
   const [msg, setMsg] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
+
     const prepareRecoverySession = async () => {
       setChecking(true);
       setError(null);
 
       try {
-        const url = new URL(window.location.href);
-
-        // Caso 1: flujo con ?code=...
-        const code = url.searchParams.get("code");
-
-        if (code) {
-          const { error } = await supabase.auth.exchangeCodeForSession(code);
-          if (error) {
-            setError("El enlace de recuperación no es válido o ha expirado.");
-            setChecking(false);
-            return;
-          }
-
-          setChecking(false);
-          return;
-        }
-
-        // Caso 2: flujo con #access_token y #refresh_token
-        const hash = window.location.hash.startsWith("#")
-          ? window.location.hash.slice(1)
-          : "";
-
-        const params = new URLSearchParams(hash);
-        const access_token = params.get("access_token");
-        const refresh_token = params.get("refresh_token");
-        const type = params.get("type");
-
-        if (type === "recovery" && access_token && refresh_token) {
-          const { error } = await supabase.auth.setSession({
-            access_token,
-            refresh_token,
-          });
-
-          if (error) {
-            setError("El enlace de recuperación no es válido o ha expirado.");
-            setChecking(false);
-            return;
-          }
-
-          setChecking(false);
-          return;
-        }
-
-        // Caso 3: ya hay sesión válida
+        // @supabase/ssr createBrowserClient enables detectSessionInUrl by default.
+        // It consumes ?code= (PKCE) during client init — do NOT call
+        // exchangeCodeForSession again (that caused a false "invalid/expired" error
+        // while the first exchange had already established a valid session).
+        //
+        // getSession() awaits client initialization, including URL detection.
         const {
           data: { session },
         } = await supabase.auth.getSession();
 
+        if (cancelled) return;
+
         if (session) {
+          setError(null);
           setChecking(false);
           return;
         }
 
-        setError("No se ha podido validar el enlace de recuperación.");
+        // Stronger check after init (validates JWT with Auth when possible).
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+
+        if (cancelled) return;
+
+        if (user) {
+          setError(null);
+          setChecking(false);
+          return;
+        }
+
+        setError("El enlace de recuperación no es válido o ha expirado.");
         setChecking(false);
       } catch (e: unknown) {
+        if (cancelled) return;
         setError(e instanceof Error ? e.message : "Error inesperado.");
         setChecking(false);
       }
     };
 
     prepareRecoverySession();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleUpdate = async () => {

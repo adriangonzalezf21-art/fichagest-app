@@ -55,12 +55,9 @@ function JoinContent() {
         return;
       }
 
-      const { data, error } = await supabase
-        .from("companies")
-        .select("id, name")
-        .eq("join_code", code)
-        .limit(1)
-        .maybeSingle();
+      const { data, error } = await supabase.rpc("lookup_company_by_join_code", {
+        p_code: code,
+      });
 
       if (error) {
         setErrorMsg(error.message);
@@ -68,14 +65,16 @@ function JoinContent() {
         return;
       }
 
-      if (!data) {
+      const row = Array.isArray(data) ? (data[0] ?? null) : data;
+
+      if (!row?.id) {
         setErrorMsg("Código inválido o empresa no encontrada.");
         setChecking(false);
         return;
       }
 
-      setCompanyId(data.id);
-      setCompanyName(data.name);
+      setCompanyId(row.id as string);
+      setCompanyName((row.name as string | null) ?? null);
       setChecking(false);
     };
 

@@ -96,7 +96,7 @@ export async function requireAdminProfile(nextPath = "/admin/shifts") {
 }
 
 /** Require platform owner (is_owner). Used by /owner/** layouts. */
-export async function requireOwnerProfile(nextPath = "/owner/companies") {
+export async function requireOwnerProfile(nextPath = "/owner") {
   const user = await requireUser(nextPath);
   const profile = await loadProfile(user.id);
 

@@ -11,7 +11,13 @@ import {
   canAccessOwnerZone,
   type ProfileAuthFields,
 } from "@/lib/authz";
-import { getNavForProfile, pageTitleFromPath } from "@/lib/navigation";
+import {
+  getNavSections,
+  homeHrefForProfile,
+  isNavItemActive,
+  pageTitleFromPath,
+  type NavItem,
+} from "@/lib/navigation";
 import { Badge } from "@/components/ui/Badge";
 import { Avatar } from "@/components/ui/Avatar";
 import { ToastProvider } from "@/components/ui/Toast";
@@ -73,16 +79,15 @@ function SidebarContent({
   onLogout: () => void;
 }) {
   const pathname = usePathname() || "/app";
-  const { primary, admin, owner } = useMemo(
-    () => getNavForProfile(profile, { enableShiftPlanning }),
-    [profile, enableShiftPlanning]
+  const sections = useMemo(
+    () => getNavSections(profile, { enableShiftPlanning, companyName }),
+    [profile, enableShiftPlanning, companyName]
   );
-
-  const isActive = (href: string) =>
-    href === "/app" ? pathname === "/app" : pathname.startsWith(href);
+  const isOwner = canAccessOwnerZone(profile);
+  const homeHref = homeHrefForProfile(profile);
 
   const displayName = profile.full_name?.trim() || email.split("@")[0] || "Usuario";
-  const roleLabel = canAccessOwnerZone(profile)
+  const roleLabel = isOwner
     ? "Owner"
     : canAccessAdminZone(profile)
       ? "Admin"
@@ -91,7 +96,7 @@ function SidebarContent({
   return (
     <div className="flex h-full flex-col">
       <div className="px-5 py-5">
-        <Link href="/app" onClick={onNavigate} className="flex items-center gap-3">
+        <Link href={homeHref} onClick={onNavigate} className="flex items-center gap-3">
           <Image
             src="/icon-192.png"
             alt="Fichagest"
@@ -107,7 +112,7 @@ function SidebarContent({
             <div className="text-[11px] text-[var(--text-muted)]">Control horario</div>
           </div>
         </Link>
-        {companyName ? (
+        {companyName && !isOwner ? (
           <div className="mt-4 rounded-[var(--radius-md)] bg-[var(--surface-muted)] px-3 py-2.5">
             <div className="flex items-center gap-2 text-[11px] text-[var(--text-muted)]">
               <Building2 className="h-3.5 w-3.5" />
@@ -123,51 +128,21 @@ function SidebarContent({
       <div className="mx-5 h-px bg-[var(--border)]" />
 
       <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
-        <div className="space-y-0.5">
-          <div className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
-            Principal
-          </div>
-          {primary.map((item) => (
-            <NavLink
-              key={item.href}
-              {...item}
-              active={isActive(item.href)}
-              onClick={onNavigate}
-            />
-          ))}
-        </div>
-
-        {admin.length > 0 ? (
-          <div className="space-y-0.5">
+        {sections.map((section, index) => (
+          <div key={`${section.title}-${index}`} className="space-y-0.5">
             <div className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
-              Administración
+              {section.title}
             </div>
-            {admin.map((item) => (
+            {section.items.map((item) => (
               <NavLink
                 key={item.href}
                 {...item}
-                active={isActive(item.href)}
+                active={isNavItemActive(pathname, item.href)}
                 onClick={onNavigate}
               />
             ))}
           </div>
-        ) : null}
-
-        {owner.length > 0 ? (
-          <div className="space-y-0.5">
-            <div className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--text-muted)]">
-              Plataforma
-            </div>
-            {owner.map((item) => (
-              <NavLink
-                key={item.href}
-                {...item}
-                active={isActive(item.href)}
-                onClick={onNavigate}
-              />
-            ))}
-          </div>
-        ) : null}
+        ))}
       </nav>
 
       <div className="border-t border-[var(--border)] p-4">
@@ -192,16 +167,27 @@ function SidebarContent({
   );
 }
 
+function ownerBottomItems(sections: ReturnType<typeof getNavSections>): {
+  core: NavItem[];
+  hasMore: boolean;
+} {
+  const company = sections[0]?.items ?? [];
+  const platform = sections[1]?.items ?? [];
+  const core = company.slice(0, 4);
+  return { core, hasMore: platform.length > 0 || company.length > 4 };
+}
+
 export default function AppShell(props: ShellProps) {
   const { children, email, profile, companyName, enableShiftPlanning } = props;
   const pathname = usePathname() || "/app";
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  const { primary, admin, owner } = useMemo(
-    () => getNavForProfile(profile, { enableShiftPlanning }),
-    [profile, enableShiftPlanning]
+  const sections = useMemo(
+    () => getNavSections(profile, { enableShiftPlanning, companyName }),
+    [profile, enableShiftPlanning, companyName]
   );
+  const isOwner = canAccessOwnerZone(profile);
 
   const logout = async () => {
     const supabase = createClient();
@@ -211,12 +197,16 @@ export default function AppShell(props: ShellProps) {
 
   const title = pageTitleFromPath(pathname);
 
-  // Worker bottom tabs: Inicio, Fichar, Historial, Vacaciones — "Más" opens drawer for the rest
-  const bottomCore = primary.filter((i) =>
-    ["/app", "/clock", "/history", "/vacations"].includes(i.href)
-  );
-  const hasMore =
-    primary.some((i) => i.href === "/my-schedule") || admin.length > 0 || owner.length > 0;
+  const bottomCore = isOwner
+    ? ownerBottomItems(sections).core
+    : (sections.find((s) => s.title === "Principal")?.items ?? []).filter((i) =>
+        ["/app", "/clock", "/history", "/vacations"].includes(i.href)
+      );
+  const hasMore = isOwner
+    ? ownerBottomItems(sections).hasMore
+    : sections.some((s) => s.title !== "Principal") ||
+      (sections.find((s) => s.title === "Principal")?.items.some((i) => i.href === "/my-schedule") ??
+        false);
 
   return (
     <ToastProvider>
@@ -279,7 +269,11 @@ export default function AppShell(props: ShellProps) {
                   <div className="truncate text-sm font-semibold text-[var(--text)] sm:text-base">
                     {title}
                   </div>
-                  {companyName ? (
+                  {isOwner && pathname.startsWith("/owner") ? (
+                    <div className="hidden truncate text-xs text-[var(--text-muted)] sm:block">
+                      Fichagest · Administración
+                    </div>
+                  ) : companyName ? (
                     <div className="hidden truncate text-xs text-[var(--text-muted)] sm:block">
                       {companyName}
                     </div>
@@ -305,8 +299,7 @@ export default function AppShell(props: ShellProps) {
           >
             {bottomCore.map((item) => {
               const Icon = item.icon;
-              const active =
-                item.href === "/app" ? pathname === "/app" : pathname.startsWith(item.href);
+              const active = isNavItemActive(pathname, item.href);
               return (
                 <Link
                   key={item.href}

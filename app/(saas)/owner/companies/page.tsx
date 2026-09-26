@@ -10,6 +10,7 @@ import {
   Search,
   Unlock,
   CalendarClock,
+  ChevronDown,
 } from "lucide-react";
 import { supabase } from "@/lib/supabaseClient";
 import { isPlatformOwner } from "@/lib/authz";
@@ -67,6 +68,14 @@ function randomJoinCode(length = 8) {
   return out;
 }
 
+function formatPlanDisplay(plan?: string | null, status?: string | null) {
+  const rawPlan = (plan || "free").trim();
+  const rawStatus = (status || "active").trim().toLowerCase();
+  const planLabel = rawPlan ? rawPlan.charAt(0).toUpperCase() + rawPlan.slice(1).toLowerCase() : "Free";
+  const statusLabel = rawStatus === "active" ? "Activo" : rawStatus;
+  return `Plan: ${planLabel} · ${statusLabel}`;
+}
+
 export default function OwnerCompaniesPage() {
   const router = useRouter();
   const { success, error: toastError, info } = useToast();
@@ -76,7 +85,6 @@ export default function OwnerCompaniesPage() {
   const [busyCompanyId, setBusyCompanyId] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const [me, setMe] = useState<MeRow | null>(null);
   const [companies, setCompanies] = useState<CompanyRow[]>([]);
   const [workerCounts, setWorkerCounts] = useState<Record<string, number>>({});
   const [usersByCompany, setUsersByCompany] = useState<Record<string, CompanyUserRow[]>>({});
@@ -86,6 +94,7 @@ export default function OwnerCompaniesPage() {
   const [companyCif, setCompanyCif] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [expandedCompanyId, setExpandedCompanyId] = useState<string | null>(null);
 
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const [confirmLoading, setConfirmLoading] = useState(false);
@@ -124,8 +133,6 @@ export default function OwnerCompaniesPage() {
     try {
       const meRow = await assertOwnerSession();
       if (!meRow) return;
-
-      setMe(meRow);
 
       // NOTA: el listado global de empresas depende de RLS remota.
       // Sin RLS correcta, este panel es altamente sensible.
@@ -195,6 +202,10 @@ export default function OwnerCompaniesPage() {
 
   useEffect(() => {
     load();
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("new") === "1") setCreateOpen(true);
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -526,10 +537,6 @@ export default function OwnerCompaniesPage() {
         }
       />
 
-      {me?.full_name ? (
-        <p className="text-sm text-[var(--text-muted)]">Owner: {me.full_name}</p>
-      ) : null}
-
       {errorMsg ? <ErrorState message={errorMsg} onRetry={load} /> : null}
 
       {companies.length > 0 ? (
@@ -573,45 +580,62 @@ export default function OwnerCompaniesPage() {
           onAction={companies.length === 0 ? () => setCreateOpen(true) : undefined}
         />
       ) : (
-        <>
-          {/* Desktop table-ish cards */}
-          <div className="hidden space-y-4 md:block">
-            {filteredCompanies.map((c) => {
-              const busy = busyCompanyId === c.id;
-              const isBlocked = c.blocked === true;
-              const plannerEnabled = c.enable_shift_planning === true;
-              const companyUsers = usersByCompany[c.id] || [];
+        <div className="space-y-3">
+          {filteredCompanies.map((c) => {
+            const busy = busyCompanyId === c.id;
+            const isBlocked = c.blocked === true;
+            const plannerEnabled = c.enable_shift_planning === true;
+            const companyUsers = usersByCompany[c.id] || [];
+            const expanded = expandedCompanyId === c.id;
 
-              return (
-                <Card key={c.id}>
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="min-w-0 space-y-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <h2 className="text-lg font-semibold text-[var(--text)]">{c.name}</h2>
-                        {isBlocked ? (
-                          <Badge tone="danger">Bloqueada</Badge>
-                        ) : (
-                          <Badge tone="success">Activa</Badge>
-                        )}
-                        {plannerEnabled ? (
-                          <Badge tone="info">Planificador ON</Badge>
-                        ) : (
-                          <Badge tone="neutral">Planificador OFF</Badge>
-                        )}
-                        {c.primary_admin_user_id ? (
-                          <Badge tone="accent">Admin asignado</Badge>
-                        ) : (
-                          <Badge tone="warning">Sin admin</Badge>
-                        )}
-                      </div>
-                      <div className="grid gap-1 text-sm text-[var(--text-secondary)] sm:grid-cols-2">
-                        <div>CIF: {c.cif || "—"}</div>
-                        <div>Código: {c.join_code}</div>
-                        <div>Trabajadores: {workerCounts[c.id] || 0}</div>
-                        <div>
-                          Plan: {c.plan || "free"} · {c.plan_status || "active"}
-                        </div>
-                      </div>
+            return (
+              <Card key={c.id} className="overflow-hidden" padding={false}>
+                <div className="flex flex-wrap items-center gap-3 p-4 sm:p-5">
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h2 className="truncate text-base font-semibold text-[var(--text)] sm:text-lg">
+                        {c.name}
+                      </h2>
+                      {isBlocked ? (
+                        <Badge tone="danger">Bloqueada</Badge>
+                      ) : (
+                        <Badge tone="success">Activa</Badge>
+                      )}
+                      {plannerEnabled ? (
+                        <Badge tone="info">Planificador activado</Badge>
+                      ) : (
+                        <Badge tone="neutral">Planificador desactivado</Badge>
+                      )}
+                      {c.primary_admin_user_id ? (
+                        <Badge tone="accent">Administrador asignado</Badge>
+                      ) : (
+                        <Badge tone="warning">Sin administrador</Badge>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-[var(--text-secondary)]">
+                      <span>CIF: {c.cif || "—"}</span>
+                      <span>Trabajadores: {workerCounts[c.id] || 0}</span>
+                      <span>{formatPlanDisplay(c.plan, c.plan_status)}</span>
+                    </div>
+                  </div>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() =>
+                      setExpandedCompanyId((prev) => (prev === c.id ? null : c.id))
+                    }
+                  >
+                    <ChevronDown
+                      className={`h-4 w-4 transition ${expanded ? "rotate-180" : ""}`}
+                    />
+                    {expanded ? "Cerrar" : "Gestionar"}
+                  </Button>
+                </div>
+
+                {expanded ? (
+                  <div className="space-y-4 border-t border-[var(--border)] bg-[var(--surface-muted)]/40 p-4 sm:p-5">
+                    <div className="text-sm text-[var(--text-secondary)]">
+                      Código: <span className="font-medium text-[var(--text)]">{c.join_code}</span>
                     </div>
 
                     <div className="flex flex-wrap gap-2">
@@ -685,149 +709,55 @@ export default function OwnerCompaniesPage() {
                         )}
                       </Button>
                     </div>
-                  </div>
 
-                  <div className="mt-5 border-t border-[var(--border)] pt-4">
-                    <h3 className="mb-3 text-sm font-medium text-[var(--text)]">
-                      Asignar administrador principal
-                    </h3>
-                    <div className="flex flex-wrap items-end gap-3">
-                      <div className="min-w-[280px] flex-1">
-                        <Select
-                          value={selectedAdminByCompany[c.id] || ""}
-                          onChange={(e) =>
-                            setSelectedAdminByCompany((prev) => ({
-                              ...prev,
-                              [c.id]: e.target.value,
-                            }))
+                    <div className="border-t border-[var(--border)] pt-4">
+                      <h3 className="mb-3 text-sm font-medium text-[var(--text)]">
+                        Asignar administrador principal
+                      </h3>
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                        <div className="min-w-0 flex-1">
+                          <Select
+                            value={selectedAdminByCompany[c.id] || ""}
+                            onChange={(e) =>
+                              setSelectedAdminByCompany((prev) => ({
+                                ...prev,
+                                [c.id]: e.target.value,
+                              }))
+                            }
+                          >
+                            <option value="">Selecciona un usuario</option>
+                            {companyUsers.map((u) => (
+                              <option key={u.user_id} value={u.user_id}>
+                                {(u.full_name || u.user_id.slice(0, 8)) +
+                                  ` · ${u.role || "worker"}${u.active === false ? " · inactivo" : ""}`}
+                              </option>
+                            ))}
+                          </Select>
+                        </div>
+                        <Button
+                          variant="accent"
+                          size="sm"
+                          className="shrink-0 sm:h-[42px]"
+                          disabled={busy || !companyUsers.length}
+                          onClick={() =>
+                            setConfirmAction({ type: "assignAdmin", companyId: c.id })
                           }
                         >
-                          <option value="">Selecciona un usuario</option>
-                          {companyUsers.map((u) => (
-                            <option key={u.user_id} value={u.user_id}>
-                              {(u.full_name || u.user_id.slice(0, 8)) +
-                                ` · ${u.role || "worker"}${u.active === false ? " · inactivo" : ""}`}
-                            </option>
-                          ))}
-                        </Select>
+                          Asignar administrador
+                        </Button>
                       </div>
-                      <Button
-                        variant="accent"
-                        size="sm"
-                        disabled={busy || !companyUsers.length}
-                        onClick={() => setConfirmAction({ type: "assignAdmin", companyId: c.id })}
-                      >
-                        Asignar admin
-                      </Button>
+                      {!companyUsers.length ? (
+                        <p className="mt-2 text-xs text-[var(--text-muted)]">
+                          Aún no hay usuarios registrados en esta empresa.
+                        </p>
+                      ) : null}
                     </div>
-                    {!companyUsers.length ? (
-                      <p className="mt-2 text-xs text-[var(--text-muted)]">
-                        Aún no hay usuarios registrados en esta empresa.
-                      </p>
-                    ) : null}
                   </div>
-                </Card>
-              );
-            })}
-          </div>
-
-          {/* Mobile cards */}
-          <div className="space-y-4 md:hidden">
-            {filteredCompanies.map((c) => {
-              const busy = busyCompanyId === c.id;
-              const isBlocked = c.blocked === true;
-              const plannerEnabled = c.enable_shift_planning === true;
-              const companyUsers = usersByCompany[c.id] || [];
-
-              return (
-                <Card key={c.id}>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-base font-semibold text-[var(--text)]">{c.name}</h2>
-                    {isBlocked ? (
-                      <Badge tone="danger">Bloqueada</Badge>
-                    ) : (
-                      <Badge tone="success">Activa</Badge>
-                    )}
-                  </div>
-                  <div className="mt-2 space-y-1 text-sm text-[var(--text-secondary)]">
-                    <div>CIF: {c.cif || "—"}</div>
-                    <div>Código: {c.join_code}</div>
-                    <div>Trabajadores: {workerCounts[c.id] || 0}</div>
-                  </div>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => {
-                        void navigator.clipboard.writeText(
-                          `${window.location.origin}/join?code=${c.join_code}`
-                        );
-                        success("Enlace copiado");
-                      }}
-                    >
-                      Copiar link
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      disabled={busy}
-                      onClick={() =>
-                        setConfirmAction({
-                          type: "planner",
-                          companyId: c.id,
-                          nextEnabled: !plannerEnabled,
-                        })
-                      }
-                    >
-                      {plannerEnabled ? "Planif. OFF" : "Planif. ON"}
-                    </Button>
-                    <Button
-                      variant={isBlocked ? "secondary" : "danger"}
-                      size="sm"
-                      disabled={busy}
-                      onClick={() =>
-                        setConfirmAction({
-                          type: "block",
-                          companyId: c.id,
-                          nextBlocked: !isBlocked,
-                        })
-                      }
-                    >
-                      {isBlocked ? "Desbloquear" : "Bloquear"}
-                    </Button>
-                  </div>
-                  <div className="mt-4 space-y-2 border-t border-[var(--border)] pt-4">
-                    <Select
-                      value={selectedAdminByCompany[c.id] || ""}
-                      onChange={(e) =>
-                        setSelectedAdminByCompany((prev) => ({
-                          ...prev,
-                          [c.id]: e.target.value,
-                        }))
-                      }
-                    >
-                      <option value="">Selecciona admin</option>
-                      {companyUsers.map((u) => (
-                        <option key={u.user_id} value={u.user_id}>
-                          {u.full_name || u.user_id.slice(0, 8)}
-                        </option>
-                      ))}
-                    </Select>
-                    <Button
-                      variant="accent"
-                      size="sm"
-                      className="w-full"
-                      disabled={busy || !companyUsers.length}
-                      onClick={() => setConfirmAction({ type: "assignAdmin", companyId: c.id })}
-                    >
-                      Asignar admin
-                    </Button>
-                  </div>
-                </Card>
-              );
-            })}
-          </div>
-        </>
+                ) : null}
+              </Card>
+            );
+          })}
+        </div>
       )}
 
       <Modal open={createOpen} title="Crear empresa" onClose={() => setCreateOpen(false)}>

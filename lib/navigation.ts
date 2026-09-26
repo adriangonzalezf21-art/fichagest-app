@@ -45,15 +45,23 @@ export function getNavSections(
 
   if (canAccessOwnerZone(profile)) {
     const companyTitle = opts?.companyName?.trim() || "Mi empresa";
+    const companyItems: NavItem[] = [
+      { href: "/admin", label: "Inicio", icon: LayoutDashboard },
+      { href: "/admin/shifts", label: "Fichajes", icon: ClipboardList },
+      { href: "/admin/users", label: "Empleados", icon: Users },
+    ];
+    if (planning) {
+      companyItems.push(
+        { href: "/admin/planned-shifts", label: "Planificación", icon: CalendarRange },
+        { href: "/admin/planned-vs-real", label: "Plan vs real", icon: Gauge }
+      );
+    }
+    companyItems.push({ href: "/admin/vacations", label: "Vacaciones", icon: CalendarDays });
+
     return [
       {
         title: companyTitle,
-        items: [
-          { href: "/admin", label: "Inicio", icon: LayoutDashboard },
-          { href: "/admin/shifts", label: "Fichajes", icon: ClipboardList },
-          { href: "/admin/users", label: "Empleados", icon: Users },
-          { href: "/admin/vacations", label: "Vacaciones", icon: CalendarDays },
-        ],
+        items: companyItems,
       },
       {
         title: "Fichagest",
